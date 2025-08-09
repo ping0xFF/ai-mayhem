@@ -1,0 +1,20 @@
+model_list:
+  - model_name: anthropic/claude-3-haiku
+    litellm_params:
+      model: "claude-3-haiku-20240307"
+      max_tokens: 4096
+
+general_settings:
+  default_model: anthropic/claude-3-haiku
+  budget:
+    total_budget: 5  # $5 total
+    daily_budget: 5  # $5/day max
+  completion_params:
+    temperature: 0.7
+  logging: 
+    log_requests: true
+    log_file: "/app/logs/requests.json"
+
+router_settings:
+  routing_strategy: "simple"
+  num_retries: 2
