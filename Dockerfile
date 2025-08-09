@@ -2,15 +2,28 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install litellm and any other dependencies
-RUN pip install litellm python-dotenv
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy configuration
+# Install Python packages
+RUN pip install --no-cache-dir \
+    litellm[proxy] \
+    python-dotenv==1.0.0 \
+    requests==2.31.0 \
+    pyyaml==6.0.1
+
+# Create necessary directories
+RUN mkdir -p /app/logs
+
+# Copy configuration and code
 COPY config.yaml .
 COPY test.py .
 
-# Create logs directory
-RUN mkdir -p /app/logs
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
 
 # Run litellm server
-CMD ["litellm", "--config", "config.yaml"]
+CMD ["litellm", "--config", "config.yaml", "--port", "8000"]

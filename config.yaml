@@ -2,19 +2,20 @@ model_list:
   - model_name: anthropic/claude-3-haiku
     litellm_params:
       model: "claude-3-haiku-20240307"
-      max_tokens: 4096
+      max_tokens: 1000  # Reduced from 4096 to save credits
+      temperature: 0.3  # Lower temperature for more focused responses
 
 general_settings:
   default_model: anthropic/claude-3-haiku
   budget:
     total_budget: 5  # $5 total
-    daily_budget: 5  # $5/day max
-  completion_params:
-    temperature: 0.7
+    daily_budget: 1  # Reduced to $1/day for testing
+    user_budget: 0.1  # $0.10 per user request
   logging: 
     log_requests: true
     log_file: "/app/logs/requests.json"
+    log_cost: true  # Track spending carefully
 
 router_settings:
   routing_strategy: "simple"
-  num_retries: 2
+  num_retries: 1  # Reduced retries to save credits
