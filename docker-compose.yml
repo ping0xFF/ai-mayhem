@@ -1,6 +1,6 @@
 services:
   litellm:
-    build: .
+    image: ghcr.io/berriai/litellm:main-latest
     ports:
       - "8000:8000"
     volumes:
@@ -11,6 +11,7 @@ services:
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - LOG_LEVEL=INFO
+    command: [ "--config", "/app/config.yaml", "--port", "8000", "--debug" ]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
