@@ -19,14 +19,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def log_request(prompt, response, model, input_tokens, output_tokens, cost):
+def calculate_cost(input_tokens, output_tokens, model):
+    # Cost rates per 1K tokens (you may need to update these based on current pricing)
+    COST_PER_1K_INPUT = 0.00025  # $0.00025 per 1K input tokens for Claude 3 Haiku
+    COST_PER_1K_OUTPUT = 0.00075  # $0.00075 per 1K output tokens for Claude 3 Haiku
+    
+    input_cost = (input_tokens / 1000) * COST_PER_1K_INPUT
+    output_cost = (output_tokens / 1000) * COST_PER_1K_OUTPUT
+    return input_cost + output_cost
+
+def log_request(prompt, response, model, input_tokens, output_tokens):
     try:
+        estimated_cost = calculate_cost(input_tokens, output_tokens, model)
         log_entry = {
             "timestamp": datetime.now().isoformat(),
             "model": model,
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
-            "estimated_cost": cost,
+            "estimated_cost": estimated_cost,
             "prompt": prompt,
             "response": response
         }
@@ -34,6 +44,8 @@ def log_request(prompt, response, model, input_tokens, output_tokens, cost):
         os.makedirs("logs", exist_ok=True)  # Ensure logs directory exists
         with open("logs/requests.json", "a") as f:
             f.write(json.dumps(log_entry) + "\n")
+            
+        logger.info(f"Request logged. Cost: ${estimated_cost:.4f}")
     except Exception as e:
         logger.error(f"Failed to log request: {e}")
 
@@ -53,12 +65,18 @@ def test_completion():
             response=response.choices[0].message.content,
             model=response.model,
             input_tokens=response.usage.prompt_tokens,
-            output_tokens=response.usage.completion_tokens,
-            cost=response.usage.total_cost
+            output_tokens=response.usage.completion_tokens
+        )
+        
+        # Calculate and display cost
+        cost = calculate_cost(
+            response.usage.prompt_tokens,
+            response.usage.completion_tokens,
+            response.model
         )
         
         print("Response:", response.choices[0].message.content)
-        print(f"Cost: ${response.usage.total_cost:.4f}")
+        print(f"Cost: ${cost:.4f}")
         
     except AuthenticationError as e:
         logger.error(f"Authentication error: {e}")
