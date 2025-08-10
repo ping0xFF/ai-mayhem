@@ -2,7 +2,7 @@
 import json, os, time, datetime, requests, pathlib
 
 LITELLM = os.getenv("LITELLM_URL", "http://localhost:8000")
-MODEL   = os.getenv("MODEL", "anthropic/claude-3-haiku")
+MODEL   = os.getenv("MODEL", "anthropic/claude-3-haiku-20240307")
 BUDGET_DOLLARS_PER_DAY = float(os.getenv("BUDGET_DAILY", "2.00"))
 
 base = pathlib.Path(__file__).resolve().parent
@@ -23,12 +23,17 @@ def estimate_cost(inp_tokens, out_tokens):
     return inp_tokens*cin + out_tokens*cout
 
 def call_llm(prompt):
-    r = requests.post(f"{LITELLM}/v1/chat/completions", json={
-        "model": MODEL,
-        "messages": [{"role":"user","content": prompt}],
-        "max_tokens": 400,
-        "temperature": 0.2
-    }, timeout=60)
+    r = requests.post(
+        f"{LITELLM}/v1/chat/completions",
+        json={
+            "model": MODEL,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 400,
+            "temperature": 0.2,
+            "user": os.getenv("AGENT_ID", "agent-default"),
+        },
+        timeout=60,
+    )
     r.raise_for_status()
     data = r.json()
     msg = data["choices"][0]["message"]["content"]
