@@ -1,3 +1,7 @@
-   litellm[proxy]
-   python-dotenv
+litellm[proxy]
+python-dotenv
 requests==2.31.0
+langgraph>=0.2.0
+langchain-core
+langgraph-checkpoint-sqlite
+aiosqlite
