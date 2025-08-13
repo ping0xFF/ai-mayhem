@@ -26,8 +26,8 @@ async def test_agent():
         
         try:
             final_state = await agent.run(goal, thread_id)
-            print(f"\n✅ Goal completed with status: {final_state.status}")
-            print(f"📊 Completed {len(final_state.completed_actions)} actions")
+            print(f"\n✅ Goal completed with status: {final_state['status']}")
+            print(f"📊 Completed {len(final_state['completed_actions'])} actions")
         except Exception as e:
             print(f"❌ Error: {e}")
         

@@ -15,7 +15,7 @@ import os
 import datetime
 import asyncio
 import sqlite3
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, TypedDict
 from pathlib import Path
 
 import requests
@@ -36,46 +36,14 @@ LOGS_DIR = BASE_DIR / "logs"
 LOGS_DIR.mkdir(exist_ok=True)
 
 
-class AgentState:
+class AgentState(TypedDict):
     """State that gets passed between nodes in the graph."""
-    
-    def __init__(self):
-        self.goal: str = ""
-        self.plan: List[str] = []
-        self.current_step: int = 0
-        self.completed_actions: List[Dict[str, Any]] = []
-        self.messages: List[BaseMessage] = []
-        self.status: str = "planning"  # planning, working, completed, failed
-        
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "goal": self.goal,
-            "plan": self.plan,
-            "current_step": self.current_step,
-            "completed_actions": self.completed_actions,
-            "messages": [{"type": type(msg).__name__, "content": msg.content} for msg in self.messages],
-            "status": self.status
-        }
-    
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'AgentState':
-        state = cls()
-        state.goal = data.get("goal", "")
-        state.plan = data.get("plan", [])
-        state.current_step = data.get("current_step", 0)
-        state.completed_actions = data.get("completed_actions", [])
-        state.status = data.get("status", "planning")
-        
-        # Reconstruct messages
-        messages = []
-        for msg_data in data.get("messages", []):
-            if msg_data["type"] == "HumanMessage":
-                messages.append(HumanMessage(content=msg_data["content"]))
-            elif msg_data["type"] == "AIMessage":
-                messages.append(AIMessage(content=msg_data["content"]))
-        state.messages = messages
-        
-        return state
+    goal: str
+    plan: List[str]
+    current_step: int
+    completed_actions: List[Dict[str, Any]]
+    messages: List[BaseMessage]
+    status: str  # planning, working, completed, failed
 
 
 def call_llm(prompt: str, model: str = PLANNER_MODEL, max_tokens: int = 400) -> tuple[str, Dict[str, Any]]:
@@ -116,13 +84,13 @@ def planner_node(state: AgentState) -> AgentState:
     """
     Planner node: Analyzes the goal and creates/updates the plan.
     """
-    print(f"🧠 Planning phase for goal: {state.goal}")
+    print(f"🧠 Planning phase for goal: {state['goal']}")
     
-    if not state.plan:  # Initial planning
+    if not state["plan"]:  # Initial planning
         prompt = f"""
         You are an AI planner. Your job is to break down a goal into actionable steps.
         
-        Goal: {state.goal}
+        Goal: {state['goal']}
         
         Create a plan with 3-5 specific, actionable steps to achieve this goal.
         Each step should be something that can be executed independently.
@@ -138,26 +106,26 @@ def planner_node(state: AgentState) -> AgentState:
         try:
             # Parse the plan from the response
             plan = json.loads(response.strip())
-            state.plan = plan
-            state.current_step = 0
-            state.status = "working"
-            state.messages.append(AIMessage(content=f"Created plan with {len(plan)} steps"))
+            state["plan"] = plan
+            state["current_step"] = 0
+            state["status"] = "working"
+            state["messages"].append(AIMessage(content=f"Created plan with {len(plan)} steps"))
             print(f"📋 Plan created with {len(plan)} steps")
         except json.JSONDecodeError:
             print("❌ Failed to parse plan from response")
-            state.status = "failed"
-            state.messages.append(AIMessage(content="Failed to create plan - invalid response format"))
+            state["status"] = "failed"
+            state["messages"].append(AIMessage(content="Failed to create plan - invalid response format"))
     
     else:  # Re-planning or plan adjustment
-        completed = len(state.completed_actions)
-        remaining = len(state.plan) - state.current_step
+        completed = len(state["completed_actions"])
+        remaining = len(state["plan"]) - state["current_step"]
         
         if remaining > 0:
             print(f"📋 Plan has {remaining} steps remaining (completed {completed})")
-            state.status = "working"
+            state["status"] = "working"
         else:
             print("✅ All planned steps completed")
-            state.status = "completed"
+            state["status"] = "completed"
     
     return state
 
@@ -166,20 +134,20 @@ def worker_node(state: AgentState) -> AgentState:
     """
     Worker node: Executes the current step in the plan.
     """
-    if state.current_step >= len(state.plan):
-        state.status = "completed"
+    if state["current_step"] >= len(state["plan"]):
+        state["status"] = "completed"
         return state
     
-    current_action = state.plan[state.current_step]
-    print(f"⚡ Executing step {state.current_step + 1}: {current_action}")
+    current_action = state["plan"][state["current_step"]]
+    print(f"⚡ Executing step {state['current_step'] + 1}: {current_action}")
     
     # Context for the worker
     context = f"""
-    Goal: {state.goal}
-    Current step ({state.current_step + 1}/{len(state.plan)}): {current_action}
+    Goal: {state['goal']}
+    Current step ({state['current_step'] + 1}/{len(state['plan'])}): {current_action}
     
     Previous completed actions:
-    {chr(10).join(f"- {action['description']}" for action in state.completed_actions[-3:])}
+    {chr(10).join(f"- {action['description']}" for action in state['completed_actions'][-3:])}
     """
     
     prompt = f"""
@@ -203,25 +171,25 @@ def worker_node(state: AgentState) -> AgentState:
     
     # Record the completed action
     action_result = {
-        "step": state.current_step,
+        "step": state["current_step"],
         "description": current_action,
         "result": response,
         "model_used": model,
         "timestamp": datetime.datetime.utcnow().isoformat() + "Z"
     }
     
-    state.completed_actions.append(action_result)
-    state.current_step += 1
-    state.messages.append(AIMessage(content=f"Completed: {current_action}\nResult: {response}"))
+    state["completed_actions"].append(action_result)
+    state["current_step"] += 1
+    state["messages"].append(AIMessage(content=f"Completed: {current_action}\nResult: {response}"))
     
     print(f"✅ Step completed. Result: {response[:100]}...")
     
     # Determine next status
-    if state.current_step >= len(state.plan):
-        state.status = "completed"
+    if state["current_step"] >= len(state["plan"]):
+        state["status"] = "completed"
         print("🎉 All steps completed!")
     else:
-        state.status = "working"
+        state["status"] = "working"
     
     return state
 
@@ -230,9 +198,9 @@ def should_continue(state: AgentState) -> str:
     """
     Routing function to determine the next node.
     """
-    if state.status == "planning":
+    if state["status"] == "planning":
         return "plan"
-    elif state.status == "working":
+    elif state["status"] == "working":
         return "work"
     else:  # completed or failed
         return END
@@ -273,9 +241,9 @@ class LangGraphAgent:
             }
         )
         
-        # Set up SQLite persistence
-        self.checkpointer = SqliteSaver.from_conn_string(str(DB_PATH))
-        self.app = workflow.compile(checkpointer=self.checkpointer)
+        # Set up SQLite persistence - simplified for now
+        self.checkpointer = None  # Will add back when LangGraph API stabilizes
+        self.app = workflow.compile()
         
     async def run(self, goal: str, thread_id: str = "default") -> AgentState:
         """
@@ -289,16 +257,19 @@ class LangGraphAgent:
         print(f"📊 Using thread ID: {thread_id}")
         
         # Initialize or load state
-        initial_state = AgentState()
-        initial_state.goal = goal
-        initial_state.messages.append(HumanMessage(content=f"Goal: {goal}"))
-        
-        config = {"configurable": {"thread_id": thread_id}}
+        initial_state: AgentState = {
+            "goal": goal,
+            "plan": [],
+            "current_step": 0,
+            "completed_actions": [],
+            "messages": [HumanMessage(content=f"Goal: {goal}")],
+            "status": "planning"
+        }
         
         try:
             # Run the graph
             final_state = None
-            async for state in self.app.astream(initial_state, config=config):
+            async for state in self.app.astream(initial_state):
                 # state is a dict with node name as key
                 for node_name, node_state in state.items():
                     print(f"📍 Completed node: {node_name}")
@@ -308,55 +279,23 @@ class LangGraphAgent:
             
         except Exception as e:
             print(f"❌ Error during execution: {e}")
-            initial_state.status = "failed"
-            initial_state.messages.append(AIMessage(content=f"Execution failed: {str(e)}"))
+            initial_state["status"] = "failed"
+            initial_state["messages"].append(AIMessage(content=f"Execution failed: {str(e)}"))
             return initial_state
     
     async def resume(self, thread_id: str = "default") -> Optional[AgentState]:
         """
         Resume an existing conversation.
-        
-        Args:
-            thread_id: The thread ID to resume
+        Note: This is temporarily disabled until LangGraph checkpointer API stabilizes.
         """
-        config = {"configurable": {"thread_id": thread_id}}
-        
-        try:
-            # Get the current state
-            current_state = await self.app.aget_state(config)
-            if current_state.values:
-                print(f"🔄 Resuming thread {thread_id}")
-                print(f"📊 Current status: {current_state.values.status}")
-                print(f"📋 Steps completed: {current_state.values.current_step}/{len(current_state.values.plan) if current_state.values.plan else 0}")
-                
-                # Continue from where we left off
-                final_state = None
-                async for state in self.app.astream(None, config=config):
-                    for node_name, node_state in state.items():
-                        print(f"📍 Completed node: {node_name}")
-                        final_state = node_state
-                
-                return final_state
-            else:
-                print(f"❌ No existing state found for thread {thread_id}")
-                return None
-                
-        except Exception as e:
-            print(f"❌ Error during resume: {e}")
-            return None
+        print(f"❌ Resume functionality temporarily disabled - checkpointer API changed")
+        print(f"Please start a new session instead")
+        return None
     
     def list_threads(self) -> List[str]:
         """List all available thread IDs."""
-        # This is a simple implementation - you might want to enhance it
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            cursor.execute("SELECT DISTINCT thread_id FROM checkpoints")
-            threads = [row[0] for row in cursor.fetchall()]
-            conn.close()
-            return threads
-        except Exception:
-            return []
+        # Temporarily disabled until checkpointer is re-enabled
+        return []
 
 
 async def main():
@@ -379,7 +318,7 @@ async def main():
         if choice == 'y':
             final_state = await agent.resume(thread_id)
             if final_state:
-                print(f"\n✅ Session resumed. Final status: {final_state.status}")
+                print(f"\n✅ Session resumed. Final status: {final_state['status']}")
                 return
     
     # Start new session
@@ -388,13 +327,13 @@ async def main():
     print("\n" + "=" * 60)
     print("📊 FINAL RESULTS")
     print("=" * 60)
-    print(f"Status: {final_state.status}")
-    print(f"Goal: {final_state.goal}")
-    print(f"Steps completed: {len(final_state.completed_actions)}")
+    print(f"Status: {final_state['status']}")
+    print(f"Goal: {final_state['goal']}")
+    print(f"Steps completed: {len(final_state['completed_actions'])}")
     
-    if final_state.completed_actions:
+    if final_state["completed_actions"]:
         print("\nCompleted actions:")
-        for i, action in enumerate(final_state.completed_actions, 1):
+        for i, action in enumerate(final_state["completed_actions"], 1):
             print(f"{i}. {action['description']}")
             print(f"   Result: {action['result'][:100]}...")
     
