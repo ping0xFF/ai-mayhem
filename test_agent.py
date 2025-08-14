@@ -250,6 +250,35 @@ class TestLangGraphAgent(unittest.TestCase):
         result = await self.agent.resume("nonexistent-thread")
         self.assertIsNone(result)  # Should return None for nonexistent thread
     
+    @patch('langgraph_agent.call_llm')
+    async def test_agent_persistence_workflow(self, mock_call_llm):
+        """Test full persistence workflow: run -> stop -> resume."""
+        # Mock responses for a complete workflow
+        mock_responses = [
+            (json.dumps(["Step 1", "Step 2"]), {"tokens": 100}),  # Planning
+            ("Completed step 1", {"tokens": 50}),                  # Worker step 1
+        ]
+        mock_call_llm.side_effect = mock_responses
+        
+        # Step 1: Run agent and create some state
+        result1 = await self.agent.run("Test persistence workflow", "persistence-test-thread")
+        
+        # Verify initial state
+        self.assertEqual(result1["goal"], "Test persistence workflow")
+        self.assertEqual(len(result1["completed_actions"]), 1)  # Should have completed 1 step
+        self.assertEqual(result1["current_step"], 1)  # Should be on step 2
+        self.assertEqual(result1["status"], "working")  # Should still be working
+        
+        # Step 2: Resume the same thread
+        result2 = await self.agent.resume("persistence-test-thread")
+        
+        # Verify resume worked
+        self.assertIsNotNone(result2)  # Should find existing state
+        self.assertEqual(result2["goal"], "Test persistence workflow")
+        self.assertEqual(len(result2["completed_actions"]), 1)  # Should preserve completed actions
+        self.assertEqual(result2["current_step"], 1)  # Should preserve current step
+        self.assertEqual(result2["status"], "working")  # Should preserve status
+    
     def test_list_threads_enabled(self):
         """Test that thread listing works (returns empty list initially)."""
         threads = self.agent.list_threads()
