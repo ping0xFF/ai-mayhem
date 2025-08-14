@@ -362,49 +362,60 @@ class LangGraphAgent:
             return threads
         except Exception:
             return []  # Return empty if no database or error
+    
+    async def close(self):
+        """Close the database connection."""
+        if hasattr(self, '_checkpointer_cache') and self._checkpointer_cache:
+            if hasattr(self._checkpointer_cache, 'conn'):
+                await self._checkpointer_cache.conn.close()
+            self._checkpointer_cache = None
 
 
 async def main():
     """Main function to demonstrate the agent."""
     agent = LangGraphAgent()
     
-    # Example usage
-    goal = "Research and write a simple Python script that monitors a directory for new files"
-    thread_id = "demo-session"
-    
-    print("=" * 60)
-    print("🤖 LangGraph AI Agent Demo")
-    print("=" * 60)
-    
-    # Check if we have an existing session
-    existing_threads = agent.list_threads()
-    if thread_id in existing_threads:
-        print(f"📂 Found existing thread: {thread_id}")
-        choice = input("Resume existing session? (y/n): ").lower()
-        if choice == 'y':
-            final_state = await agent.resume(thread_id)
-            if final_state:
-                print(f"\n✅ Session resumed. Final status: {final_state['status']}")
-                return
-    
-    # Start new session
-    final_state = await agent.run(goal, thread_id)
-    
-    print("\n" + "=" * 60)
-    print("📊 FINAL RESULTS")
-    print("=" * 60)
-    print(f"Status: {final_state['status']}")
-    print(f"Goal: {final_state['goal']}")
-    print(f"Steps completed: {len(final_state['completed_actions'])}")
-    
-    if final_state["completed_actions"]:
-        print("\nCompleted actions:")
-        for i, action in enumerate(final_state["completed_actions"], 1):
-            print(f"{i}. {action['description']}")
-            print(f"   Result: {action['result'][:100]}...")
-    
-    print(f"\n💾 State saved to: {DB_PATH}")
-    print(f"📝 Logs saved to: {LOGS_DIR}")
+    try:
+        # Example usage
+        goal = "Research and write a simple Python script that monitors a directory for new files"
+        thread_id = "demo-session"
+        
+        print("=" * 60)
+        print("🤖 LangGraph AI Agent Demo")
+        print("=" * 60)
+        
+        # Check if we have an existing session
+        existing_threads = agent.list_threads()
+        if thread_id in existing_threads:
+            print(f"📂 Found existing thread: {thread_id}")
+            choice = input("Resume existing session? (y/n): ").lower()
+            if choice == 'y':
+                final_state = await agent.resume(thread_id)
+                if final_state:
+                    print(f"\n✅ Session resumed. Final status: {final_state['status']}")
+                    return
+        
+        # Start new session
+        final_state = await agent.run(goal, thread_id)
+        
+        print("\n" + "=" * 60)
+        print("📊 FINAL RESULTS")
+        print("=" * 60)
+        print(f"Status: {final_state['status']}")
+        print(f"Goal: {final_state['goal']}")
+        print(f"Steps completed: {len(final_state['completed_actions'])}")
+        
+        if final_state["completed_actions"]:
+            print("\nCompleted actions:")
+            for i, action in enumerate(final_state["completed_actions"], 1):
+                print(f"{i}. {action['description']}")
+                print(f"   Result: {action['result'][:100]}...")
+        
+        print(f"\n💾 State saved to: {DB_PATH}")
+        print(f"📝 Logs saved to: {LOGS_DIR}")
+        
+    finally:
+        await agent.close()  # Close the database connection
 
 
 if __name__ == "__main__":

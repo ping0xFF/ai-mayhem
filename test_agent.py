@@ -327,14 +327,17 @@ async def run_integration_test():
         ]
         
         agent = LangGraphAgent()
-        result = await agent.run("Test integration", "integration-test")
-        
-        if result['status'] == 'completed':
-            print("  ✓ End-to-end workflow execution with persistence")
-            return True
-        else:
-            print("  ✗ End-to-end workflow execution")
-            return False
+        try:
+            result = await agent.run("Test integration", "integration-test")
+            
+            if result['status'] == 'completed':
+                print("  ✓ End-to-end workflow execution with persistence")
+                return True
+            else:
+                print("  ✗ End-to-end workflow execution")
+                return False
+        finally:
+            await agent.close()  # Close the database connection
 
 
 if __name__ == "__main__":
