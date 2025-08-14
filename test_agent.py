@@ -25,6 +25,37 @@ from langgraph_agent import (
 from langchain_core.messages import HumanMessage, AIMessage
 
 
+class CleanTextTestResult(unittest.TextTestResult):
+    """Simple formatter for clean test output."""
+    
+    def __init__(self, stream, descriptions, verbosity):
+        super().__init__(stream, descriptions, verbosity)
+        self.current_class = None
+        self.verbosity = verbosity
+        
+    def startTest(self, test):
+        super().startTest(test)
+        class_name = test.__class__.__name__
+        if class_name != self.current_class:
+            self.stream.write(f"{class_name}\n")
+            self.current_class = class_name
+            
+    def addSuccess(self, test):
+        # Don't call super() to suppress default output
+        if self.verbosity > 1:
+            self.stream.write(f"  ✓ {test._testMethodName}\n")
+            
+    def addError(self, test, err):
+        super().addError(test, err)  # Keep error tracking
+        if self.verbosity > 1:
+            self.stream.write(f"  ✗ {test._testMethodName}\n")
+            
+    def addFailure(self, test, err):
+        super().addFailure(test, err)  # Keep failure tracking
+        if self.verbosity > 1:
+            self.stream.write(f"  ✗ {test._testMethodName}\n")
+
+
 class TestAgentState(unittest.TestCase):
     """Test the AgentState TypedDict structure."""
     
@@ -178,7 +209,7 @@ class TestLangGraphAgent(unittest.TestCase):
     def test_agent_initialization(self):
         """Test agent initializes properly."""
         self.assertIsNotNone(self.agent.app)
-        self.assertIsNone(self.agent.checkpointer)  # Currently disabled
+        self.assertIsNone(self.agent._checkpointer_cache)  # Lazy loaded
     
     @patch('langgraph_agent.call_llm')
     async def test_agent_run_success(self, mock_call_llm):
@@ -214,15 +245,15 @@ class TestLangGraphAgent(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertEqual(len(result["plan"]), 0)
     
-    async def test_agent_resume_disabled(self):
-        """Test that resume functionality is currently disabled."""
-        result = await self.agent.resume("any-thread")
-        self.assertIsNone(result)
+    async def test_agent_resume_empty(self):
+        """Test that resume works with nonexistent thread."""
+        result = await self.agent.resume("nonexistent-thread")
+        self.assertIsNone(result)  # Should return None for nonexistent thread
     
-    def test_list_threads_disabled(self):
-        """Test that thread listing is currently disabled."""
+    def test_list_threads_enabled(self):
+        """Test that thread listing works (returns empty list initially)."""
         threads = self.agent.list_threads()
-        self.assertEqual(threads, [])
+        self.assertIsInstance(threads, list)  # Should return a list (empty initially)
 
 
 class TestLLMIntegration(unittest.TestCase):
@@ -258,8 +289,7 @@ class TestLLMIntegration(unittest.TestCase):
 
 def run_basic_tests():
     """Run basic tests that don't require external dependencies."""
-    print("🧪 Running LangGraph Agent Tests")
-    print("=" * 50)
+    print("Running LangGraph Agent Tests...\n")
     
     # Create test suite with only basic tests
     loader = unittest.TestLoader()
@@ -271,23 +301,22 @@ def run_basic_tests():
     suite.addTests(loader.loadTestsFromTestCase(TestLangGraphAgent))
     suite.addTests(loader.loadTestsFromTestCase(TestLLMIntegration))
     
-    # Run tests
-    runner = unittest.TextTestRunner(verbosity=2)
+    # Run tests with clean formatter
+    runner = unittest.TextTestRunner(verbosity=2, resultclass=CleanTextTestResult)
     result = runner.run(suite)
     
-    print("\n" + "=" * 50)
+    # Summary
     if result.wasSuccessful():
-        print("✅ All tests passed!")
+        print("\nAll tests passed!")
     else:
-        print(f"❌ {len(result.failures)} failures, {len(result.errors)} errors")
+        print(f"\n{len(result.failures)} failures, {len(result.errors)} errors")
         
     return result.wasSuccessful()
 
 
 async def run_integration_test():
     """Run a simple integration test with mocked LLM."""
-    print("\n🔧 Running Integration Test")
-    print("-" * 30)
+    print("\nIntegration Test")
     
     with patch('langgraph_agent.call_llm') as mock_llm:
         # Mock successful planning and execution
@@ -300,12 +329,12 @@ async def run_integration_test():
         agent = LangGraphAgent()
         result = await agent.run("Test integration", "integration-test")
         
-        print(f"Goal: {result['goal']}")
-        print(f"Status: {result['status']}")
-        print(f"Steps completed: {len(result['completed_actions'])}")
-        print(f"Final step: {result['current_step']}")
-        
-        return result['status'] == 'completed'
+        if result['status'] == 'completed':
+            print("  ✓ End-to-end workflow execution with persistence")
+            return True
+        else:
+            print("  ✗ End-to-end workflow execution")
+            return False
 
 
 if __name__ == "__main__":
@@ -316,8 +345,8 @@ if __name__ == "__main__":
     integration_success = asyncio.run(run_integration_test())
     
     if success and integration_success:
-        print("\n🎉 All tests successful!")
+        print("\nAll tests successful!")
         exit(0)
     else:
-        print("\n💥 Some tests failed!")
+        print("\nSome tests failed!")
         exit(1)

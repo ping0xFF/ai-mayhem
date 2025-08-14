@@ -15,12 +15,13 @@ import os
 import datetime
 import asyncio
 import sqlite3
+import aiosqlite
 from typing import Dict, Any, Optional, List, TypedDict
 from pathlib import Path
 
 import requests
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 
 
@@ -84,120 +85,137 @@ def planner_node(state: AgentState) -> AgentState:
     """
     Planner node: Analyzes the goal and creates/updates the plan.
     """
-    print(f"🧠 Planning phase for goal: {state['goal']}")
+    print(f"  Planning: {state['goal']}")
     
-    if not state["plan"]:  # Initial planning
-        prompt = f"""
-        You are an AI planner. Your job is to break down a goal into actionable steps.
-        
-        Goal: {state['goal']}
-        
-        Create a plan with 3-5 specific, actionable steps to achieve this goal.
-        Each step should be something that can be executed independently.
-        
-        Format your response as a JSON list of strings, like:
-        ["Step 1 description", "Step 2 description", "Step 3 description"]
-        
-        Only return the JSON list, nothing else.
-        """
-        
-        response, usage = call_llm(prompt, PLANNER_MODEL, max_tokens=500)
-        
-        try:
-            # Parse the plan from the response
-            plan = json.loads(response.strip())
-            state["plan"] = plan
-            state["current_step"] = 0
-            state["status"] = "working"
-            state["messages"].append(AIMessage(content=f"Created plan with {len(plan)} steps"))
-            print(f"📋 Plan created with {len(plan)} steps")
-        except json.JSONDecodeError:
-            print("❌ Failed to parse plan from response")
-            state["status"] = "failed"
-            state["messages"].append(AIMessage(content="Failed to create plan - invalid response format"))
+    # If we already have a plan and haven't completed it, continue working
+    if state["plan"] and state["current_step"] < len(state["plan"]):
+        print(f"    Plan has {len(state['plan']) - state['current_step']} steps remaining (completed {len(state['completed_actions'])})")
+        return {**state, "status": "working"}
     
-    else:  # Re-planning or plan adjustment
-        completed = len(state["completed_actions"])
-        remaining = len(state["plan"]) - state["current_step"]
-        
-        if remaining > 0:
-            print(f"📋 Plan has {remaining} steps remaining (completed {completed})")
-            state["status"] = "working"
-        else:
-            print("✅ All planned steps completed")
-            state["status"] = "completed"
+    # Create a new plan
+    prompt = f"""
+Create a step-by-step plan to accomplish this goal: {state['goal']}
+
+Break it down into 3-5 specific, actionable steps. Return ONLY a JSON array of strings.
+
+Example format: ["Step 1: Research X", "Step 2: Create Y", "Step 3: Test Z"]
+
+Goal: {state['goal']}
+"""
     
-    return state
+    # If there is no plan or we've completed the current plan, try to create a new one
+    try:
+        response, usage = call_llm(prompt, model=PLANNER_MODEL)
+        plan = json.loads(response)
+        
+        if not isinstance(plan, list):
+            raise ValueError("Plan must be a list")
+            
+        print(f"    Created plan with {len(plan)} steps")
+        
+        # Add AI message to conversation history documenting the created plan
+        new_messages = state["messages"] + [
+            AIMessage(content=f"Created plan: {json.dumps(plan, indent=2)}")
+        ]
+        
+        # Return updated state with new plan, reset step counter, add messages, and set status to working
+        return {
+            **state,
+            "plan": plan,
+            "current_step": 0,
+            "messages": new_messages,
+            "status": "working"
+        }
+        
+    except (json.JSONDecodeError, ValueError, KeyError) as e:
+        print(f"    Failed to parse plan from response")
+        error_msg = f"Failed to create plan: {str(e)}"
+        
+        return {
+            **state,
+            "status": "failed",
+            "messages": state["messages"] + [AIMessage(content=error_msg)]
+        }
 
 
 def worker_node(state: AgentState) -> AgentState:
     """
     Worker node: Executes the current step in the plan.
     """
+    # Check if we've completed all steps
     if state["current_step"] >= len(state["plan"]):
-        state["status"] = "completed"
-        return state
+        print(f"  All steps completed!")
+        return {**state, "status": "completed"}
     
-    current_action = state["plan"][state["current_step"]]
-    print(f"⚡ Executing step {state['current_step'] + 1}: {current_action}")
+    # Get the current step
+    current_step_description = state["plan"][state["current_step"]]
+    step_number = state["current_step"] + 1
     
-    # Context for the worker
+    print(f"  Executing step {step_number}: {current_step_description}")
+    
+    # Create prompt for the worker
     context = f"""
-    Goal: {state['goal']}
-    Current step ({state['current_step'] + 1}/{len(state['plan'])}): {current_action}
+Goal: {state['goal']}
+Current step ({step_number}/{len(state['plan'])}): {current_step_description}
+
+Previous completed actions:
+{json.dumps([action['description'] for action in state['completed_actions']], indent=2) if state['completed_actions'] else 'None'}
+
+Execute this step and provide a detailed description of what you accomplished.
+Be specific about what was done and any important findings or results.
+"""
     
-    Previous completed actions:
-    {chr(10).join(f"- {action['description']}" for action in state['completed_actions'][-3:])}
-    """
-    
-    prompt = f"""
-    You are an AI worker executing a specific step in a plan.
-    
-    {context}
-    
-    Execute this step: {current_action}
-    
-    Provide:
-    1. A description of what you did (be specific)
-    2. Any important findings or results
-    3. Whether this step is complete or needs more work
-    
-    Keep your response concise but informative.
-    """
-    
-    # Use the more capable model for complex tasks
-    model = WORKER_MODEL if "complex" in current_action.lower() or "analyze" in current_action.lower() else PLANNER_MODEL
-    response, usage = call_llm(prompt, model, max_tokens=600)
-    
-    # Record the completed action
-    action_result = {
-        "step": state["current_step"],
-        "description": current_action,
-        "result": response,
-        "model_used": model,
-        "timestamp": datetime.datetime.utcnow().isoformat() + "Z"
-    }
-    
-    state["completed_actions"].append(action_result)
-    state["current_step"] += 1
-    state["messages"].append(AIMessage(content=f"Completed: {current_action}\nResult: {response}"))
-    
-    print(f"✅ Step completed. Result: {response[:100]}...")
-    
-    # Determine next status
-    if state["current_step"] >= len(state["plan"]):
-        state["status"] = "completed"
-        print("🎉 All steps completed!")
-    else:
-        state["status"] = "working"
-    
-    return state
+    try:
+        # Use more capable model for execution
+        response, usage = call_llm(context, model=WORKER_MODEL, max_tokens=600)
+        
+        # Record the completed action
+        completed_action = {
+            "step": state["current_step"],
+            "description": current_step_description,
+            "result": response,
+            "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+            "usage": usage
+        }
+        
+        # Update state
+        new_completed_actions = state["completed_actions"] + [completed_action]
+        new_step = state["current_step"] + 1
+        
+        print(f"    Step completed. Result: {response[:50]}...")
+        
+        # Add the work message
+        new_messages = state["messages"] + [
+            AIMessage(content=f"Completed step {step_number}: {response}")
+        ]
+        
+        # Determine next status
+        if new_step >= len(state["plan"]):
+            next_status = "completed"
+        else:
+            next_status = "working"
+        
+        return {
+            **state,
+            "current_step": new_step,
+            "completed_actions": new_completed_actions,
+            "messages": new_messages,
+            "status": next_status
+        }
+        
+    except Exception as e:
+        error_msg = f"Failed to execute step {step_number}: {str(e)}"
+        print(f"    Error: {error_msg}")
+        
+        return {
+            **state,
+            "status": "failed",
+            "messages": state["messages"] + [AIMessage(content=error_msg)]
+        }
 
 
 def should_continue(state: AgentState) -> str:
-    """
-    Routing function to determine the next node.
-    """
+    """Determine which node to go to next based on current status."""
     if state["status"] == "planning":
         return "plan"
     elif state["status"] == "working":
@@ -241,9 +259,25 @@ class LangGraphAgent:
             }
         )
         
-        # Set up SQLite persistence - simplified for now
-        self.checkpointer = None  # Will add back when LangGraph API stabilizes
+        # Set up SQLite persistence
+        self.db_path = str(DB_PATH)
+        self._checkpointer_cache = None
         self.app = workflow.compile()
+        
+    async def _get_checkpointer(self):
+        """Get or create the async checkpointer."""
+        if self._checkpointer_cache is None:
+            conn = await aiosqlite.connect(self.db_path)
+            self._checkpointer_cache = AsyncSqliteSaver(conn)
+            # Recompile the app with checkpointer
+            workflow = StateGraph(AgentState)
+            workflow.add_node("plan", planner_node)
+            workflow.add_node("work", worker_node)
+            workflow.set_entry_point("plan")
+            workflow.add_conditional_edges("plan", should_continue, {"plan": "plan", "work": "work", END: END})
+            workflow.add_conditional_edges("work", should_continue, {"plan": "plan", "work": "work", END: END})
+            self.app = workflow.compile(checkpointer=self._checkpointer_cache)
+        return self._checkpointer_cache
         
     async def run(self, goal: str, thread_id: str = "default") -> AgentState:
         """
@@ -253,8 +287,11 @@ class LangGraphAgent:
             goal: The goal for the agent to work toward
             thread_id: Unique identifier for this conversation thread
         """
-        print(f"🚀 Starting agent with goal: {goal}")
-        print(f"📊 Using thread ID: {thread_id}")
+        print(f"Starting agent with goal: {goal}")
+        print(f"Using thread ID: {thread_id}")
+        
+        # Set up checkpointer
+        await self._get_checkpointer()
         
         # Initialize or load state
         initial_state: AgentState = {
@@ -267,35 +304,64 @@ class LangGraphAgent:
         }
         
         try:
-            # Run the graph
+            # Run the graph with persistence
             final_state = None
-            async for state in self.app.astream(initial_state):
+            config = {"configurable": {"thread_id": thread_id}}
+            async for state in self.app.astream(initial_state, config=config):
                 # state is a dict with node name as key
                 for node_name, node_state in state.items():
-                    print(f"📍 Completed node: {node_name}")
+                    print(f"  Completed node: {node_name}")
                     final_state = node_state
             
             return final_state
             
         except Exception as e:
-            print(f"❌ Error during execution: {e}")
+            print(f"Error during execution: {e}")
             initial_state["status"] = "failed"
             initial_state["messages"].append(AIMessage(content=f"Execution failed: {str(e)}"))
             return initial_state
     
     async def resume(self, thread_id: str = "default") -> Optional[AgentState]:
-        """
-        Resume an existing conversation.
-        Note: This is temporarily disabled until LangGraph checkpointer API stabilizes.
-        """
-        print(f"❌ Resume functionality temporarily disabled - checkpointer API changed")
-        print(f"Please start a new session instead")
-        return None
+        """Resume an existing conversation."""
+        try:
+            print(f"Resuming thread: {thread_id}")
+            
+            # Set up checkpointer
+            await self._get_checkpointer()
+            config = {"configurable": {"thread_id": thread_id}}
+            
+            # Get the latest state
+            state = await self.app.aget_state(config)
+            if not state.values:
+                print(f"No existing state found for thread: {thread_id}")
+                return None
+                
+            print(f"Found existing state with status: {state.values['status']}")
+            
+            # Continue from where we left off
+            final_state = None
+            async for state in self.app.astream(None, config=config):
+                for node_name, node_state in state.items():
+                    print(f"  Completed node: {node_name}")
+                    final_state = node_state
+            
+            return final_state
+            
+        except Exception as e:
+            print(f"Error resuming thread {thread_id}: {e}")
+            return None
     
     def list_threads(self) -> List[str]:
         """List all available thread IDs."""
-        # Temporarily disabled until checkpointer is re-enabled
-        return []
+        try:
+            # Query the SQLite database directly
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.execute("SELECT DISTINCT thread_id FROM checkpoints")
+            threads = [row[0] for row in cursor.fetchall()]
+            conn.close()
+            return threads
+        except Exception:
+            return []  # Return empty if no database or error
 
 
 async def main():
