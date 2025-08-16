@@ -5,7 +5,7 @@ CLI interface for the LangGraph agent.
 
 import asyncio
 import argparse
-from langgraph_agent import LangGraphAgent
+from agent import LangGraphAgent
 
 
 async def main():
