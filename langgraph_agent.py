@@ -19,16 +19,16 @@ import aiosqlite
 from typing import Dict, Any, Optional, List, TypedDict
 from pathlib import Path
 
-import requests
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 
+# Import our professional LLM client
+from llm_client import llm_call, get_model_stats
+
 
 # Configuration
 LITELLM_URL = os.getenv("LITELLM_URL", "http://localhost:8000")
-PLANNER_MODEL = os.getenv("PLANNER_MODEL", "anthropic/claude-3-haiku-20240307")
-WORKER_MODEL = os.getenv("WORKER_MODEL", "anthropic/claude-3-5-sonnet-20240620")  # More capable for complex tasks
 
 # Paths
 BASE_DIR = Path(__file__).resolve().parent
@@ -47,43 +47,10 @@ class AgentState(TypedDict):
     status: str  # planning, working, completed, failed
 
 
-def call_llm(prompt: str, model: str = PLANNER_MODEL, max_tokens: int = 400) -> tuple[str, Dict[str, Any]]:
-    """Call the LiteLLM endpoint."""
-    response = requests.post(
-        f"{LITELLM_URL}/v1/chat/completions",
-        json={
-            "model": model,
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": max_tokens,
-            "temperature": 0.2,
-        },
-        timeout=60,
-    )
-    response.raise_for_status()
-    data = response.json()
-    
-    message = data["choices"][0]["message"]["content"]
-    usage = data.get("usage", {})
-    
-    # Log the interaction
-    log_entry = {
-        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
-        "model": model,
-        "prompt": prompt[:200] + "..." if len(prompt) > 200 else prompt,
-        "response": message[:200] + "..." if len(message) > 200 else message,
-        "usage": usage
-    }
-    
-    log_path = LOGS_DIR / f"langgraph-{datetime.date.today().isoformat()}.jsonl"
-    with open(log_path, "a") as f:
-        f.write(json.dumps(log_entry) + "\n")
-    
-    return message, usage
-
-
 def planner_node(state: AgentState) -> AgentState:
     """
     Planner node: Analyzes the goal and creates/updates the plan.
+    Uses Haiku model for planning tasks.
     """
     print(f"  Planning: {state['goal']}")
     
@@ -92,7 +59,7 @@ def planner_node(state: AgentState) -> AgentState:
         print(f"    Plan has {len(state['plan']) - state['current_step']} steps remaining (completed {len(state['completed_actions'])})")
         return {**state, "status": "working"}
     
-    # Create a new plan
+    # Create a new plan using Haiku (efficient for planning)
     prompt = f"""
 Create a step-by-step plan to accomplish this goal: {state['goal']}
 
@@ -103,15 +70,20 @@ Example format: ["Step 1: Research X", "Step 2: Create Y", "Step 3: Test Z"]
 Goal: {state['goal']}
 """
     
-    # If there is no plan or we've completed the current plan, try to create a new one
     try:
-        response, usage = call_llm(prompt, model=PLANNER_MODEL)
-        plan = json.loads(response)
+        # Use our professional LLM client with Haiku for planning
+        result = llm_call(
+            messages=[("system", "You are a concise planner."), ("human", prompt)],
+            model=None,  # Auto-select (will choose Haiku for planning)
+            max_tokens=400
+        )
+        
+        plan = json.loads(result["text"])
         
         if not isinstance(plan, list):
             raise ValueError("Plan must be a list")
             
-        print(f"    Created plan with {len(plan)} steps")
+        print(f"    Created plan with {len(plan)} steps (using {result['model_used']}, cost: ${result['estimated_cost']:.6f})")
         
         # Add AI message to conversation history documenting the created plan
         new_messages = state["messages"] + [
@@ -141,6 +113,7 @@ Goal: {state['goal']}
 def worker_node(state: AgentState) -> AgentState:
     """
     Worker node: Executes the current step in the plan.
+    Automatically selects Haiku or Sonnet based on task complexity.
     """
     # Check if we've completed all steps
     if state["current_step"] >= len(state["plan"]):
@@ -166,27 +139,34 @@ Be specific about what was done and any important findings or results.
 """
     
     try:
-        # Use more capable model for execution
-        response, usage = call_llm(context, model=WORKER_MODEL, max_tokens=600)
+        # Use our professional LLM client with automatic model selection
+        result = llm_call(
+            messages=[("system", "You are a precise worker."), ("human", context)],
+            model=None,  # Auto-select based on complexity
+            max_tokens=600
+        )
         
-        # Record the completed action
+        # Record the completed action with cost information
         completed_action = {
             "step": state["current_step"],
             "description": current_step_description,
-            "result": response,
+            "result": result["text"],
             "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
-            "usage": usage
+            "usage": result["usage"],
+            "model_used": result["model_used"],
+            "cost": result["estimated_cost"]
         }
         
         # Update state
         new_completed_actions = state["completed_actions"] + [completed_action]
         new_step = state["current_step"] + 1
         
-        print(f"    Step completed. Result: {response[:50]}...")
+        print(f"    Step completed using {result['model_used']} (cost: ${result['estimated_cost']:.6f})")
+        print(f"    Result: {result['text'][:50]}...")
         
         # Add the work message
         new_messages = state["messages"] + [
-            AIMessage(content=f"Completed step {step_number}: {response}")
+            AIMessage(content=f"Completed step {step_number} using {result['model_used']}: {result['text']}")
         ]
         
         # Determine next status
@@ -238,7 +218,11 @@ class LangGraphAgent:
         # Set entry point
         workflow.set_entry_point("plan")
         
-        # Add conditional edges
+        # This creates conditional transitions from the plan node based on the agent's status:
+        # When the plan node finishes, should_continue determines the next state:
+        # - Loop back to "plan" to continue planning
+        # - Move to "work" to execute the plan
+        # - Or END to terminate the workflow
         workflow.add_conditional_edges(
             "plan",
             should_continue,
@@ -265,7 +249,14 @@ class LangGraphAgent:
         self.app = workflow.compile()
         
     async def _get_checkpointer(self):
-        """Get or create the async checkpointer."""
+        """Get or create the async checkpointer.
+        
+        Note: This duplicates the workflow graph setup because LangGraph requires the
+        checkpointer to be attached during graph compilation - it can't be added to an
+        already-compiled graph. While redundant, this is a framework limitation.
+        The checkpointer needs to track state transitions between nodes, not just
+        save final state to the DB.
+        """
         if self._checkpointer_cache is None:
             conn = await aiosqlite.connect(self.db_path)
             self._checkpointer_cache = AsyncSqliteSaver(conn)
@@ -407,9 +398,23 @@ async def main():
         
         if final_state["completed_actions"]:
             print("\nCompleted actions:")
+            total_cost = 0.0
             for i, action in enumerate(final_state["completed_actions"], 1):
+                cost = action.get('cost', 0.0)
+                total_cost += cost
+                model = action.get('model_used', 'unknown')
                 print(f"{i}. {action['description']}")
+                print(f"   Model: {model}, Cost: ${cost:.6f}")
                 print(f"   Result: {action['result'][:100]}...")
+            
+            print(f"\nTotal cost: ${total_cost:.6f}")
+        
+        # Show model usage stats
+        stats = get_model_stats()
+        print(f"\n📈 Today's LLM Usage:")
+        print(f"   Total calls: {stats['total_calls']}")
+        print(f"   Total cost: ${stats['total_cost']:.6f}")
+        print(f"   Model breakdown: {stats['model_breakdown']}")
         
         print(f"\n💾 State saved to: {DB_PATH}")
         print(f"📝 Logs saved to: {LOGS_DIR}")
