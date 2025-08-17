@@ -9,12 +9,17 @@ import asyncio
 import json
 import tempfile
 import sqlite3
+import sys
+import os
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 from typing import Dict, Any
 
+# Add parent directory to path for imports
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 # Import the agent code
-from langgraph_agent import (
+from agent import (
     AgentState, 
     LangGraphAgent, 
     planner_node, 
@@ -92,7 +97,7 @@ class TestNodeFunctions(unittest.TestCase):
             "status": "planning"
         }
     
-    @patch('langgraph_agent.llm_call')
+    @patch('agent.llm_call')
     def test_planner_node_success(self, mock_llm_call):
         """Test planner node creates a valid plan."""
         # Mock LLM response
@@ -117,7 +122,7 @@ class TestNodeFunctions(unittest.TestCase):
         # Just verify it was called - the content check is complex with the new message format
         self.assertTrue(mock_llm_call.called)
     
-    @patch('langgraph_agent.llm_call')
+    @patch('agent.llm_call')
     def test_planner_node_json_error(self, mock_llm_call):
         """Test planner node handles invalid JSON response."""
         # Mock invalid JSON response
@@ -150,7 +155,7 @@ class TestNodeFunctions(unittest.TestCase):
         self.assertEqual(result["status"], "working")
         self.assertEqual(result["plan"], ["Existing step"])
     
-    @patch('langgraph_agent.llm_call')
+    @patch('agent.llm_call')
     def test_worker_node_execution(self, mock_llm_call):
         """Test worker node executes a step."""
         # Setup state with plan
@@ -226,7 +231,7 @@ class TestLangGraphAgent(unittest.TestCase):
         self.assertIsNotNone(self.agent.app)
         self.assertIsNone(self.agent._checkpointer_cache)  # Lazy loaded
     
-    @patch('langgraph_agent.llm_call')
+    @patch('agent.llm_call')
     async def test_agent_run_success(self, mock_llm_call):
         """Test full agent run with mocked LLM."""
         # Mock responses for planner and worker
@@ -263,7 +268,7 @@ class TestLangGraphAgent(unittest.TestCase):
         # Verify LLM was called appropriate number of times
         self.assertEqual(mock_llm_call.call_count, 3)  # 1 planner + 2 worker calls
     
-    @patch('langgraph_agent.llm_call')
+    @patch('agent.llm_call')
     async def test_agent_run_planning_failure(self, mock_llm_call):
         """Test agent handles planning failure."""
         # Mock invalid JSON from planner
@@ -285,7 +290,7 @@ class TestLangGraphAgent(unittest.TestCase):
         result = await self.agent.resume("nonexistent-thread")
         self.assertIsNone(result)  # Should return None for nonexistent thread
     
-    @patch('langgraph_agent.llm_call')
+    @patch('agent.llm_call')
     async def test_agent_persistence_workflow(self, mock_llm_call):
         """Test full persistence workflow: run -> stop -> resume."""
         # Mock responses for a complete workflow
@@ -375,7 +380,7 @@ async def run_integration_test():
     """Run a simple integration test with mocked LLM."""
     print("\nIntegration Test")
     
-    with patch('langgraph_agent.llm_call') as mock_llm:
+    with patch('agent.llm_call') as mock_llm:
         # Mock successful planning and execution
         mock_llm.side_effect = [
             {

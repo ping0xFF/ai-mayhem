@@ -131,7 +131,7 @@ def llm_call(
     
     Args:
         messages: List of (role, content) tuples, e.g. [("system", "..."), ("human", "...")]
-        model: "haiku", "sonnet", or None for auto-selection
+        model: HAIKU_MODEL, SONNET_MODEL, or None for auto-selection
         max_tokens: Maximum tokens for response
         **kwargs: Additional parameters for the LLM call
     

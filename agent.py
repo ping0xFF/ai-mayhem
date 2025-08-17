@@ -24,7 +24,7 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 
 # Import our professional LLM client
-from llm_client import llm_call, get_model_stats
+from llm_client import llm_call, get_model_stats, HAIKU_MODEL, SONNET_MODEL
 
 
 # Configuration
@@ -71,10 +71,10 @@ Goal: {state['goal']}
 """
     
     try:
-        # Use our professional LLM client with Haiku for planning
+        # Use our professional LLM client with Sonnet for planning
         result = llm_call(
             messages=[("system", "You are a concise planner."), ("human", prompt)],
-            model="sonnet",  # ALWAYS use Sonnet for planning (strategic thinking)
+            model=SONNET_MODEL,  # Use constant instead of hardcoded string
             max_tokens=400
         )
         
@@ -139,10 +139,10 @@ Be specific about what was done and any important findings or results.
 """
     
     try:
-        # Use our professional LLM client with automatic model selection
+        # Use our professional LLM client with Haiku for execution
         result = llm_call(
             messages=[("system", "You are a precise worker."), ("human", context)],
-            model="haiku",  # ALWAYS use Haiku for execution (simple tasks)
+            model=HAIKU_MODEL,  # Use constant instead of hardcoded string
             max_tokens=600
         )
         
@@ -227,7 +227,7 @@ class LangGraphAgent:
         # Add nodes
         workflow.add_node("plan", planner_node)
         workflow.add_node("work", worker_node)
-        workflow.add_node("budget", budget_node) # Add budget node
+        workflow.add_node("budget", budget_node)
         
         # Set entry point
         workflow.set_entry_point("plan")
@@ -289,7 +289,7 @@ class LangGraphAgent:
             workflow = StateGraph(AgentState)
             workflow.add_node("plan", planner_node)
             workflow.add_node("work", worker_node)
-            workflow.add_node("budget", budget_node) # Add budget node
+            workflow.add_node("budget", budget_node)
             workflow.set_entry_point("plan")
             workflow.add_conditional_edges("plan", should_continue, {"plan": "plan", "work": "work", END: END})
             workflow.add_conditional_edges("work", should_continue, {"plan": "plan", "work": "work", END: END})
