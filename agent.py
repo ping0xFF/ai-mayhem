@@ -199,10 +199,15 @@ def budget_node(state: AgentState) -> AgentState:
     cap = float(os.getenv("BUDGET_DAILY", "2.00"))
     spent = state.get("spent_today", 0.0)
     
+    print(f"  Budget check: ${spent:.2f}/${cap:.2f}")
+    
     if spent >= cap:
         state["status"] = "completed"  # Stop execution
         state["messages"].append(AIMessage(content=f"Budget cap hit: ${spent:.2f}/{cap:.2f}"))
-        print(f"  Budget exceeded: ${spent:.2f}/{cap:.2f}")
+        print(f"    Budget exceeded: ${spent:.2f}/${cap:.2f}")
+    else:
+        state["status"] = "planning"  # Continue to planning
+        print(f"    Budget OK, continuing to planning")
     
     return state
 
@@ -230,7 +235,7 @@ class LangGraphAgent:
         workflow.add_node("budget", budget_node)
         
         # Set entry point
-        workflow.set_entry_point("plan")
+        workflow.set_entry_point("budget")
         
         # This creates conditional transitions from the plan node based on the agent's status:
         # When the plan node finishes, should_continue determines the next state:
@@ -290,7 +295,7 @@ class LangGraphAgent:
             workflow.add_node("plan", planner_node)
             workflow.add_node("work", worker_node)
             workflow.add_node("budget", budget_node)
-            workflow.set_entry_point("plan")
+            workflow.set_entry_point("budget")
             workflow.add_conditional_edges("plan", should_continue, {"plan": "plan", "work": "work", END: END})
             workflow.add_conditional_edges("work", should_continue, {"plan": "plan", "work": "work", END: END})
             workflow.add_conditional_edges("budget", should_continue, {"plan": "plan", "work": "work", END: END})
