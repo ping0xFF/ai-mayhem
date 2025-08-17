@@ -27,7 +27,7 @@ from agent import (
     should_continue
 )
 from llm_client import llm_call
-from langchain_core.messages import HumanMessage, AIMessage
+# Removed BaseMessage import - now using strings for messages
 
 
 class CleanTextTestResult(unittest.TextTestResult):
@@ -73,14 +73,16 @@ class TestAgentState(unittest.TestCase):
             "plan": ["Step 1", "Step 2"],
             "current_step": 0,
             "completed_actions": [],
-            "messages": [HumanMessage(content="test")],
-            "status": "planning"
+            "messages": ["Human: test"],  # Use strings instead of HumanMessage
+            "status": "planning",
+            "spent_today": 0.0  # Add spent_today field
         }
         
         self.assertEqual(state["goal"], "Test goal")
         self.assertEqual(len(state["plan"]), 2)
         self.assertEqual(state["current_step"], 0)
         self.assertEqual(state["status"], "planning")
+        self.assertEqual(state["spent_today"], 0.0)
 
 
 class TestNodeFunctions(unittest.TestCase):
@@ -93,8 +95,9 @@ class TestNodeFunctions(unittest.TestCase):
             "plan": [],
             "current_step": 0,
             "completed_actions": [],
-            "messages": [HumanMessage(content="Goal: Create a simple test application")],
-            "status": "planning"
+            "messages": ["Human: Goal: Create a simple test application"],  # Use strings instead of HumanMessage
+            "status": "planning",
+            "spent_today": 0.0  # Add spent_today field
         }
     
     @patch('agent.llm_call')
@@ -140,7 +143,7 @@ class TestNodeFunctions(unittest.TestCase):
         self.assertEqual(len(result["plan"]), 0)
         
         # Check error message was added
-        self.assertTrue(any("Failed to create plan" in msg.content for msg in result["messages"] if isinstance(msg, AIMessage)))
+        self.assertTrue(any("AI(error): Failed to create plan" in msg for msg in result["messages"] if isinstance(msg, str)))
     
     def test_planner_node_existing_plan(self):
         """Test planner node with existing plan."""

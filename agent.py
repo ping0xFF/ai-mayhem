@@ -46,14 +46,15 @@ class AgentState(TypedDict):
     plan: List[str]
     current_step: int
     completed_actions: List[Dict[str, Any]]
-    messages: List[BaseMessage]
-    status: str  # planning, working, completed, failed
+    messages: List[str]  # Changed from List[BaseMessage] to List[str]
+    status: str  # planning, working, completed, failed, capped
+    spent_today: float  # Track budget here
 
 
 def planner_node(state: AgentState) -> AgentState:
     """
     Planner node: Analyzes the goal and creates/updates the plan.
-    Uses Haiku model for planning tasks.
+    Uses Sonnet model for planning tasks (more capable for complex planning).
     """
     print(f"  Planning: {state['goal']}")
     
@@ -62,7 +63,7 @@ def planner_node(state: AgentState) -> AgentState:
         print(f"    Plan has {len(state['plan']) - state['current_step']} steps remaining (completed {len(state['completed_actions'])})")
         return {**state, "status": "working"}
     
-    # Create a new plan using Haiku (efficient for planning)
+    # Create a new plan using Sonnet (more capable for planning)
     prompt = f"""
 Create a step-by-step plan to accomplish this goal: {state['goal']}
 
@@ -77,7 +78,7 @@ Goal: {state['goal']}
         # Use our professional LLM client with Sonnet for planning
         result = llm_call(
             messages=[("system", "You are a concise planner."), ("human", prompt)],
-            model=SONNET_MODEL,  # Use constant instead of hardcoded string
+            model=SONNET_MODEL,
             max_tokens=400
         )
         
@@ -88,9 +89,12 @@ Goal: {state['goal']}
             
         print(f"    Created plan with {len(plan)} steps (using {result['model_used']}, cost: ${result['estimated_cost']:.6f})")
         
+        # Track spending
+        state["spent_today"] = state.get("spent_today", 0.0) + result["estimated_cost"]
+        
         # Add AI message to conversation history documenting the created plan
         new_messages = state["messages"] + [
-            AIMessage(content=f"Created plan: {json.dumps(plan, indent=2)}")
+            f"AI(plan): created plan with {len(plan)} steps (cost ${result['estimated_cost']:.4f})"
         ]
         
         # Return updated state with new plan, reset step counter, add messages, and set status to working
@@ -109,7 +113,7 @@ Goal: {state['goal']}
         return {
             **state,
             "status": "failed",
-            "messages": state["messages"] + [AIMessage(content=error_msg)]
+            "messages": state["messages"] + [f"AI(error): {error_msg}"]
         }
 
 
@@ -160,6 +164,9 @@ Be specific about what was done and any important findings or results.
             "cost": result["estimated_cost"]
         }
         
+        # Track spending
+        state["spent_today"] = state.get("spent_today", 0.0) + result["estimated_cost"]
+        
         # Update state
         new_completed_actions = state["completed_actions"] + [completed_action]
         new_step = state["current_step"] + 1
@@ -169,7 +176,7 @@ Be specific about what was done and any important findings or results.
         
         # Add the work message
         new_messages = state["messages"] + [
-            AIMessage(content=f"Completed step {step_number} using {result['model_used']}: {result['text']}")
+            f"AI(work-{result['model_used']}): {result['text'][:120]}"
         ]
         
         # Determine next status
@@ -218,8 +225,8 @@ def budget_node(state: AgentState) -> AgentState:
     print(f"  Budget check: ${spent:.2f}/${cap:.2f}")
     
     if spent >= cap:
-        state["status"] = "completed"  # Stop execution
-        state["messages"].append(AIMessage(content=f"Budget cap hit: ${spent:.2f}/{cap:.2f}"))
+        state["status"] = "capped"  # Use distinct status for budget cap
+        state["messages"].append(f"Budget cap hit: ${spent:.2f}/{cap:.2f}")
         print(f"    Budget exceeded: ${spent:.2f}/${cap:.2f}")
     else:
         state["status"] = "planning"  # Continue to planning
@@ -234,7 +241,7 @@ def should_continue(state: AgentState) -> str:
         return "plan"
     elif state["status"] == "working":
         return "work"
-    else:  # completed or failed
+    else:  # completed, failed, or capped
         return END
 
 
@@ -338,8 +345,9 @@ class LangGraphAgent:
             "plan": [],
             "current_step": 0,
             "completed_actions": [],
-            "messages": [HumanMessage(content=f"Goal: {goal}")],
-            "status": "planning"
+            "messages": [f"Human: Goal: {goal}"],  # Use strings instead of BaseMessage
+            "status": "planning",
+            "spent_today": 0.0  # Track budget here
         }
         
         try:
@@ -357,7 +365,7 @@ class LangGraphAgent:
         except Exception as e:
             print(f"Error during execution: {e}")
             initial_state["status"] = "failed"
-            initial_state["messages"].append(AIMessage(content=f"Execution failed: {str(e)}"))
+            initial_state["messages"].append(f"AI(error): Execution failed: {str(e)}")
             return initial_state
     
     async def resume(self, thread_id: str = "default") -> Optional[AgentState]:
