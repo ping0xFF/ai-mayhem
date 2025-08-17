@@ -74,7 +74,7 @@ Goal: {state['goal']}
         # Use our professional LLM client with Haiku for planning
         result = llm_call(
             messages=[("system", "You are a concise planner."), ("human", prompt)],
-            model=None,  # Auto-select (will choose Haiku for planning)
+            model="sonnet",  # ALWAYS use Sonnet for planning (strategic thinking)
             max_tokens=400
         )
         
@@ -142,7 +142,7 @@ Be specific about what was done and any important findings or results.
         # Use our professional LLM client with automatic model selection
         result = llm_call(
             messages=[("system", "You are a precise worker."), ("human", context)],
-            model=None,  # Auto-select based on complexity
+            model="haiku",  # ALWAYS use Haiku for execution (simple tasks)
             max_tokens=600
         )
         
@@ -194,6 +194,19 @@ Be specific about what was done and any important findings or results.
         }
 
 
+def budget_node(state: AgentState) -> AgentState:
+    """Check if we've exceeded the daily budget."""
+    cap = float(os.getenv("BUDGET_DAILY", "2.00"))
+    spent = state.get("spent_today", 0.0)
+    
+    if spent >= cap:
+        state["status"] = "completed"  # Stop execution
+        state["messages"].append(AIMessage(content=f"Budget cap hit: ${spent:.2f}/{cap:.2f}"))
+        print(f"  Budget exceeded: ${spent:.2f}/{cap:.2f}")
+    
+    return state
+
+
 def should_continue(state: AgentState) -> str:
     """Determine which node to go to next based on current status."""
     if state["status"] == "planning":
@@ -214,6 +227,7 @@ class LangGraphAgent:
         # Add nodes
         workflow.add_node("plan", planner_node)
         workflow.add_node("work", worker_node)
+        workflow.add_node("budget", budget_node) # Add budget node
         
         # Set entry point
         workflow.set_entry_point("plan")
@@ -224,12 +238,12 @@ class LangGraphAgent:
         # - Move to "work" to execute the plan
         # - Or END to terminate the workflow
         workflow.add_conditional_edges(
-            "plan",
-            should_continue,
+            "plan",                    # From the planning node
+            should_continue,           # Use should_continue function to determine next state
             {
-                "plan": "plan",
-                "work": "work",
-                END: END
+                "plan": "plan",        # If status="planning", loop back to plan node
+                "work": "work",        # If status="working", go to work node
+                END: END              # If status="completed" or "failed", end workflow
             }
         )
         
@@ -239,6 +253,17 @@ class LangGraphAgent:
             {
                 "plan": "plan",
                 "work": "work", 
+                END: END
+            }
+        )
+
+        # Add conditional edges for budget node
+        workflow.add_conditional_edges(
+            "budget",
+            should_continue,
+            {
+                "plan": "plan",
+                "work": "work",
                 END: END
             }
         )
@@ -264,9 +289,11 @@ class LangGraphAgent:
             workflow = StateGraph(AgentState)
             workflow.add_node("plan", planner_node)
             workflow.add_node("work", worker_node)
+            workflow.add_node("budget", budget_node) # Add budget node
             workflow.set_entry_point("plan")
             workflow.add_conditional_edges("plan", should_continue, {"plan": "plan", "work": "work", END: END})
             workflow.add_conditional_edges("work", should_continue, {"plan": "plan", "work": "work", END: END})
+            workflow.add_conditional_edges("budget", should_continue, {"plan": "plan", "work": "work", END: END})
             self.app = workflow.compile(checkpointer=self._checkpointer_cache)
         return self._checkpointer_cache
         
