@@ -16,8 +16,10 @@ import datetime
 import asyncio
 import sqlite3
 import aiosqlite
+import sys
 from typing import Dict, Any, Optional, List, TypedDict
 from pathlib import Path
+from dotenv import load_dotenv
 
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -26,6 +28,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 # Import our professional LLM client
 from llm_client import llm_call, get_model_stats, HAIKU_MODEL, SONNET_MODEL
 
+load_dotenv()
 
 # Configuration
 LITELLM_URL = os.getenv("LITELLM_URL", "http://localhost:8000")
@@ -196,7 +199,20 @@ Be specific about what was done and any important findings or results.
 
 def budget_node(state: AgentState) -> AgentState:
     """Check if we've exceeded the daily budget."""
-    cap = float(os.getenv("BUDGET_DAILY", "2.00"))
+    budget_daily = os.getenv("BUDGET_DAILY")
+    if budget_daily is None:
+        print("❌ ERROR: BUDGET_DAILY environment variable not found!")
+        print("   Please add BUDGET_DAILY=2.00 to your .env file")
+        print("   Example: echo 'BUDGET_DAILY=2.00' >> .env")
+        sys.exit(1)
+    
+    try:
+        cap = float(budget_daily)
+    except ValueError:
+        print(f"❌ ERROR: Invalid BUDGET_DAILY value: '{budget_daily}'")
+        print("   Please set BUDGET_DAILY to a valid number (e.g., 2.00)")
+        sys.exit(1)
+    
     spent = state.get("spent_today", 0.0)
     
     print(f"  Budget check: ${spent:.2f}/${cap:.2f}")
