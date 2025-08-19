@@ -23,7 +23,6 @@ from dotenv import load_dotenv
 
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 
 # Import our professional LLM client
 from llm_client import llm_call, get_model_stats, HAIKU_MODEL, SONNET_MODEL
@@ -49,6 +48,19 @@ class AgentState(TypedDict):
     messages: List[str]  # Changed from List[BaseMessage] to List[str]
     status: str  # planning, working, completed, failed, capped
     spent_today: float  # Track budget here
+    last_date: str  # Track the date to reset spent_today on new day
+
+
+def _reset_spent_if_new_day(state: AgentState) -> AgentState:
+    """Reset spent_today if it's a new day."""
+    today = datetime.date.today().isoformat()
+    last_date = state.get("last_date", "")
+    
+    if last_date != today:
+        print(f"  New day detected: {last_date} -> {today}, resetting spent_today")
+        return {**state, "spent_today": 0.0, "last_date": today}
+    
+    return state
 
 
 def planner_node(state: AgentState) -> AgentState:
@@ -56,6 +68,9 @@ def planner_node(state: AgentState) -> AgentState:
     Planner node: Analyzes the goal and creates/updates the plan.
     Uses Sonnet model for planning tasks (more capable for complex planning).
     """
+    # Check if we need to reset spent_today for a new day
+    state = _reset_spent_if_new_day(state)
+    
     print(f"  Planning: {state['goal']}")
     
     # If we already have a plan and haven't completed it, continue working
@@ -122,6 +137,9 @@ def worker_node(state: AgentState) -> AgentState:
     Worker node: Executes the current step in the plan.
     Automatically selects Haiku or Sonnet based on task complexity.
     """
+    # Check if we need to reset spent_today for a new day
+    state = _reset_spent_if_new_day(state)
+    
     # Check if we've completed all steps
     if state["current_step"] >= len(state["plan"]):
         print(f"  All steps completed!")
@@ -200,12 +218,15 @@ Be specific about what was done and any important findings or results.
         return {
             **state,
             "status": "failed",
-            "messages": state["messages"] + [AIMessage(content=error_msg)]
+            "messages": state["messages"] + [f"AI(error): {error_msg}"]
         }
 
 
 def budget_node(state: AgentState) -> AgentState:
     """Check if we've exceeded the daily budget."""
+    # Check if we need to reset spent_today for a new day
+    state = _reset_spent_if_new_day(state)
+    
     budget_daily = os.getenv("BUDGET_DAILY")
     if budget_daily is None:
         print("❌ ERROR: BUDGET_DAILY environment variable not found!")
@@ -347,7 +368,8 @@ class LangGraphAgent:
             "completed_actions": [],
             "messages": [f"Human: Goal: {goal}"],  # Use strings instead of BaseMessage
             "status": "planning",
-            "spent_today": 0.0  # Track budget here
+            "spent_today": 0.0,  # Track budget here
+            "last_date": datetime.date.today().isoformat()  # Initialize with today's date
         }
         
         try:
