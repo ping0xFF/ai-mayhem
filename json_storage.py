@@ -370,6 +370,20 @@ async def get_daily_usage(model: str = None) -> Dict[str, Any]:
     return await _db_manager.get_daily_usage(model)
 
 
+async def get_cursor(name: str) -> Optional[int]:
+    """Get cursor timestamp (async wrapper)."""
+    if not _db_manager:
+        await init_db()
+    return await _db_manager.get_cursor(name)
+
+
+async def set_cursor(name: str, last_ts: int, notes: str = None) -> None:
+    """Set cursor for delta fetches (async wrapper)."""
+    if not _db_manager:
+        await init_db()
+    await _db_manager.set_cursor(name, last_ts, notes)
+
+
 async def health_check() -> bool:
     """Run health check (async wrapper)."""
     if not _db_manager:

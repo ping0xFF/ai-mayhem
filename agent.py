@@ -26,6 +26,7 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 # Import our professional LLM client
 from llm_client import llm_call, get_model_stats, HAIKU_MODEL, SONNET_MODEL
+from planner_worker import planner_node as new_planner_node, worker_node as new_worker_node, analyze_node, brief_node, memory_node
 
 load_dotenv()
 
@@ -49,6 +50,18 @@ class AgentState(TypedDict):
     status: str  # planning, working, completed, failed, capped
     spent_today: float  # Track budget here
     last_date: str  # Track the date to reset spent_today on new day
+    # New fields for Planner/Worker integration
+    selected_action: Optional[str]  # wallet_recon, lp_recon, explore_metrics
+    target_wallet: Optional[str]  # For wallet_recon
+    events: List[Dict[str, Any]]  # Events from worker
+    raw_data: Dict[str, Any]  # Raw data from worker
+    cursors: Dict[str, int]  # Cursor timestamps
+    last24h_counts: Dict[str, int]  # Event counts from analyze
+    top_pools: List[str]  # Top pools from analyze
+    signals: Dict[str, float]  # Signals from analyze
+    brief_text: Optional[str]  # Brief text if emitted
+    next_watchlist: List[str]  # Next watchlist from brief
+    last_brief_at: int  # Last brief timestamp
 
 
 def _reset_spent_if_new_day(state: AgentState) -> AgentState:
@@ -63,7 +76,7 @@ def _reset_spent_if_new_day(state: AgentState) -> AgentState:
     return state
 
 
-def planner_node(state: AgentState) -> AgentState:
+def legacy_planner_node(state: AgentState) -> AgentState:
     """
     Planner node: Analyzes the goal and creates/updates the plan.
     Uses Sonnet model for planning tasks (more capable for complex planning).
@@ -132,7 +145,7 @@ Goal: {state['goal']}
         }
 
 
-def worker_node(state: AgentState) -> AgentState:
+def legacy_worker_node(state: AgentState) -> AgentState:
     """
     Worker node: Executes the current step in the plan.
     Automatically selects Haiku or Sonnet based on task complexity.
@@ -250,8 +263,8 @@ def budget_node(state: AgentState) -> AgentState:
         state["messages"].append(f"Budget cap hit: ${spent:.2f}/{cap:.2f}")
         print(f"    Budget exceeded: ${spent:.2f}/${cap:.2f}")
     else:
-        state["status"] = "planning"  # Continue to planning
-        print(f"    Budget OK, continuing to planning")
+        state["status"] = "planning"  # Continue to new planner
+        print(f"    Budget OK, continuing to new planner")
     
     return state
 
@@ -259,11 +272,52 @@ def budget_node(state: AgentState) -> AgentState:
 def should_continue(state: AgentState) -> str:
     """Determine which node to go to next based on current status."""
     if state["status"] == "planning":
-        return "plan"
+        return "new_plan"
     elif state["status"] == "working":
-        return "work"
+        return "new_work"
+    elif state["status"] == "analyzing":
+        return "analyze"
+    elif state["status"] == "briefing":
+        return "brief"
+    elif state["status"] == "memory":
+        return "memory"
     else:  # completed, failed, or capped
         return END
+
+
+def new_planner_wrapper(state: AgentState) -> AgentState:
+    """Wrapper to call the async planner_node."""
+    import asyncio
+    result = asyncio.run(new_planner_node(state))
+    return result
+
+
+def new_worker_wrapper(state: AgentState) -> AgentState:
+    """Wrapper to call the async worker_node."""
+    import asyncio
+    result = asyncio.run(new_worker_node(state))
+    return result
+
+
+def analyze_wrapper(state: AgentState) -> AgentState:
+    """Wrapper to call the async analyze_node."""
+    import asyncio
+    result = asyncio.run(analyze_node(state))
+    return result
+
+
+def brief_wrapper(state: AgentState) -> AgentState:
+    """Wrapper to call the async brief_node."""
+    import asyncio
+    result = asyncio.run(brief_node(state))
+    return result
+
+
+def memory_wrapper(state: AgentState) -> AgentState:
+    """Wrapper to call the async memory_node."""
+    import asyncio
+    result = asyncio.run(memory_node(state))
+    return result
 
 
 class LangGraphAgent:
@@ -274,45 +328,96 @@ class LangGraphAgent:
         workflow = StateGraph(AgentState)
         
         # Add nodes
-        workflow.add_node("plan", planner_node)
-        workflow.add_node("work", worker_node)
         workflow.add_node("budget", budget_node)
+        workflow.add_node("new_plan", new_planner_wrapper)
+        workflow.add_node("new_work", new_worker_wrapper)
+        workflow.add_node("analyze", analyze_wrapper)
+        workflow.add_node("brief", brief_wrapper)
+        workflow.add_node("memory", memory_wrapper)
         
         # Set entry point
         workflow.set_entry_point("budget")
         
-        # This creates conditional transitions from the plan node based on the agent's status:
-        # When the plan node finishes, should_continue determines the next state:
-        # - Loop back to "plan" to continue planning
-        # - Move to "work" to execute the plan
-        # - Or END to terminate the workflow
-        workflow.add_conditional_edges(
-            "plan",                    # From the planning node
-            should_continue,           # Use should_continue function to determine next state
-            {
-                "plan": "plan",        # If status="planning", loop back to plan node
-                "work": "work",        # If status="working", go to work node
-                END: END              # If status="completed" or "failed", end workflow
-            }
-        )
-        
-        workflow.add_conditional_edges(
-            "work",
-            should_continue,
-            {
-                "plan": "plan",
-                "work": "work", 
-                END: END
-            }
-        )
-
         # Add conditional edges for budget node
         workflow.add_conditional_edges(
             "budget",
             should_continue,
             {
-                "plan": "plan",
-                "work": "work",
+                "new_plan": "new_plan",
+                "new_work": "new_work",
+                "analyze": "analyze",
+                "brief": "brief",
+                "memory": "memory",
+                END: END
+            }
+        )
+        
+        # Add conditional edges for new_plan node
+        workflow.add_conditional_edges(
+            "new_plan",
+            should_continue,
+            {
+                "new_plan": "new_plan",
+                "new_work": "new_work",
+                "analyze": "analyze",
+                "brief": "brief",
+                "memory": "memory",
+                END: END
+            }
+        )
+        
+        # Add conditional edges for new_work node
+        workflow.add_conditional_edges(
+            "new_work",
+            should_continue,
+            {
+                "new_plan": "new_plan",
+                "new_work": "new_work",
+                "analyze": "analyze",
+                "brief": "brief",
+                "memory": "memory",
+                END: END
+            }
+        )
+        
+        # Add conditional edges for analyze node
+        workflow.add_conditional_edges(
+            "analyze",
+            should_continue,
+            {
+                "new_plan": "new_plan",
+                "new_work": "new_work",
+                "analyze": "analyze",
+                "brief": "brief",
+                "memory": "memory",
+                END: END
+            }
+        )
+        
+        # Add conditional edges for brief node
+        workflow.add_conditional_edges(
+            "brief",
+            should_continue,
+            {
+                "new_plan": "new_plan",
+                "new_work": "new_work",
+                "analyze": "analyze",
+                "brief": "brief",
+                "memory": "memory",
+                END: END
+            }
+        )
+        
+        # Add conditional edges for memory node
+        workflow.add_conditional_edges(
+            "memory",
+            should_continue,
+            {
+                "new_plan": "new_plan",
+                "new_work": "new_work",
+                "analyze": "analyze",
+                "brief": "brief",
+                "memory": "memory",
                 END: END
             }
         )
@@ -336,13 +441,19 @@ class LangGraphAgent:
             self._checkpointer_cache = AsyncSqliteSaver(conn)
             # Recompile the app with checkpointer
             workflow = StateGraph(AgentState)
-            workflow.add_node("plan", planner_node)
-            workflow.add_node("work", worker_node)
             workflow.add_node("budget", budget_node)
+            workflow.add_node("new_plan", new_planner_wrapper)
+            workflow.add_node("new_work", new_worker_wrapper)
+            workflow.add_node("analyze", analyze_wrapper)
+            workflow.add_node("brief", brief_wrapper)
+            workflow.add_node("memory", memory_wrapper)
             workflow.set_entry_point("budget")
-            workflow.add_conditional_edges("plan", should_continue, {"plan": "plan", "work": "work", END: END})
-            workflow.add_conditional_edges("work", should_continue, {"plan": "plan", "work": "work", END: END})
-            workflow.add_conditional_edges("budget", should_continue, {"plan": "plan", "work": "work", END: END})
+            workflow.add_conditional_edges("budget", should_continue, {"new_plan": "new_plan", "new_work": "new_work", "analyze": "analyze", "brief": "brief", "memory": "memory", END: END})
+            workflow.add_conditional_edges("new_plan", should_continue, {"new_plan": "new_plan", "new_work": "new_work", "analyze": "analyze", "brief": "brief", "memory": "memory", END: END})
+            workflow.add_conditional_edges("new_work", should_continue, {"new_plan": "new_plan", "new_work": "new_work", "analyze": "analyze", "brief": "brief", "memory": "memory", END: END})
+            workflow.add_conditional_edges("analyze", should_continue, {"new_plan": "new_plan", "new_work": "new_work", "analyze": "analyze", "brief": "brief", "memory": "memory", END: END})
+            workflow.add_conditional_edges("brief", should_continue, {"new_plan": "new_plan", "new_work": "new_work", "analyze": "analyze", "brief": "brief", "memory": "memory", END: END})
+            workflow.add_conditional_edges("memory", should_continue, {"new_plan": "new_plan", "new_work": "new_work", "analyze": "analyze", "brief": "brief", "memory": "memory", END: END})
             self.app = workflow.compile(checkpointer=self._checkpointer_cache)
         return self._checkpointer_cache
         
@@ -369,7 +480,19 @@ class LangGraphAgent:
             "messages": [f"Human: Goal: {goal}"],  # Use strings instead of BaseMessage
             "status": "planning",
             "spent_today": 0.0,  # Track budget here
-            "last_date": datetime.date.today().isoformat()  # Initialize with today's date
+            "last_date": datetime.date.today().isoformat(),  # Initialize with today's date
+            # New fields for Planner/Worker integration
+            "selected_action": None,
+            "target_wallet": None,
+            "events": [],
+            "raw_data": {},
+            "cursors": {},
+            "last24h_counts": {},
+            "top_pools": [],
+            "signals": {},
+            "brief_text": None,
+            "next_watchlist": [],
+            "last_brief_at": 0
         }
         
         try:
