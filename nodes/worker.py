@@ -6,7 +6,8 @@ import time
 from datetime import datetime
 from typing import Dict, Any
 
-from json_storage import save_json, get_cursor, set_cursor
+from json_storage import get_cursor, set_cursor
+from data_model import save_raw_response, NormalizedEvent
 from mock_tools import fetch_wallet_activity, fetch_lp_activity, web_metrics_lookup
 
 
@@ -26,6 +27,7 @@ async def worker_node(state: Dict[str, Any]) -> Dict[str, Any]:
     
     events = []
     raw_data = {}
+    source_ids = []
     
     try:
         if selected_action == "wallet_recon":
@@ -40,17 +42,23 @@ async def worker_node(state: Dict[str, Any]) -> Dict[str, Any]:
             # Fetch wallet activity
             wallet_events = fetch_wallet_activity(wallet, since_ts)
             
-            # Save raw data
+            # Save raw data to Layer 1
             raw_id = f"wallet_activity_{wallet}_{since_ts}"
-            await save_json(raw_id, "wallet_activity", {
+            await save_raw_response(raw_id, "wallet_activity", {
                 "wallet": wallet,
                 "since_ts": since_ts,
                 "events": wallet_events,
                 "timestamp": int(datetime.now().timestamp())
+            }, provenance={
+                "source": "mock_tools",
+                "wallet": wallet,
+                "since_ts": since_ts,
+                "snapshot_time": int(datetime.now().timestamp())
             })
             
             events = wallet_events
             raw_data = {"wallet": wallet, "event_count": len(events)}
+            source_ids.append(raw_id)
             
             # Update cursor
             new_cursor = int(datetime.now().timestamp())
@@ -63,16 +71,21 @@ async def worker_node(state: Dict[str, Any]) -> Dict[str, Any]:
             # Fetch LP activity
             lp_events = fetch_lp_activity(since_ts)
             
-            # Save raw data
+            # Save raw data to Layer 1
             raw_id = f"lp_activity_{since_ts}"
-            await save_json(raw_id, "lp_activity", {
+            await save_raw_response(raw_id, "lp_activity", {
                 "since_ts": since_ts,
                 "events": lp_events,
                 "timestamp": int(datetime.now().timestamp())
+            }, provenance={
+                "source": "mock_tools",
+                "since_ts": since_ts,
+                "snapshot_time": int(datetime.now().timestamp())
             })
             
             events = lp_events
             raw_data = {"event_count": len(events)}
+            source_ids.append(raw_id)
             
             # Update cursor
             new_cursor = int(datetime.now().timestamp())
@@ -83,9 +96,13 @@ async def worker_node(state: Dict[str, Any]) -> Dict[str, Any]:
             query = "base chain DEX metrics volume pools"
             metrics = web_metrics_lookup(query)
             
-            # Save raw data
+            # Save raw data to Layer 1
             raw_id = f"web_metrics_{int(datetime.now().timestamp())}"
-            await save_json(raw_id, "web_metrics", metrics)
+            await save_raw_response(raw_id, "web_metrics", metrics, provenance={
+                "source": "mock_tools",
+                "query": query,
+                "snapshot_time": metrics.get("snapshot_time", int(datetime.now().timestamp()))
+            })
             
             # Convert metrics to event-like format for consistency
             events = [{
@@ -104,6 +121,7 @@ async def worker_node(state: Dict[str, Any]) -> Dict[str, Any]:
             }]
             
             raw_data = {"metrics": metrics}
+            source_ids.append(raw_id)
             
             # Update cursor
             new_cursor = int(datetime.now().timestamp())
@@ -117,6 +135,7 @@ async def worker_node(state: Dict[str, Any]) -> Dict[str, Any]:
             **state,
             "events": events,
             "raw_data": raw_data,
+            "source_ids": source_ids,
             "execution_time": execution_time,
             "status": "analyzing"
         }

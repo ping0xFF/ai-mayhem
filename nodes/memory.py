@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Dict, Any
 
 from json_storage import save_json
+from data_model import get_data_model
 
 
 async def memory_node(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -18,19 +19,11 @@ async def memory_node(state: Dict[str, Any]) -> Dict[str, Any]:
     print("  💾 Memory: Persisting final artifacts...")
     start_time = time.time()
     
-    # Store brief if it was emitted
+    # Store brief if it was emitted (already done in brief node via Layer 3)
     if "brief_text" in state:
-        brief_id = f"brief_{int(datetime.now().timestamp())}"
-        await save_json(brief_id, "briefs", {
-            "text": state["brief_text"],
-            "next_watchlist": state.get("next_watchlist", []),
-            "timestamp": int(datetime.now().timestamp()),
-            "signals": state.get("signals", {}),
-            "event_counts": state.get("last24h_counts", {})
-        })
-        print(f"    ✅ Stored brief: {brief_id}")
+        print(f"    ✅ Brief already persisted to Layer 3")
     
-    # Store derived metrics
+    # Store derived metrics (legacy, for backward compatibility)
     if "signals" in state:
         metrics_id = f"metrics_{int(datetime.now().timestamp())}"
         await save_json(metrics_id, "derived_metrics", {
@@ -39,7 +32,7 @@ async def memory_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "top_pools": state.get("top_pools", []),
             "timestamp": int(datetime.now().timestamp())
         })
-        print(f"    ✅ Stored metrics: {metrics_id}")
+        print(f"    ✅ Stored legacy metrics: {metrics_id}")
     
     # Update cursors in state for next run
     current_time = int(datetime.now().timestamp())

@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Dict, Any
 
 from .config import BRIEF_COOLDOWN, BRIEF_THRESHOLD_EVENTS, BRIEF_THRESHOLD_SIGNAL
+from data_model import persist_brief, Artifact
 
 
 async def brief_node(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -79,6 +80,24 @@ async def brief_node(state: Dict[str, Any]) -> Dict[str, Any]:
             next_watchlist.append(top_pool)
     
     brief_text += f"Next watchlist: {', '.join(next_watchlist) if next_watchlist else 'none'}."
+    
+    # Create artifact for Layer 3
+    current_time = int(datetime.now().timestamp())
+    artifact_id = f"brief_{current_time}"
+    source_ids = state.get("source_ids", [])
+    
+    artifact = Artifact(
+        artifact_id=artifact_id,
+        timestamp=current_time,
+        summary_text=brief_text,
+        signals=signals,
+        next_watchlist=next_watchlist,
+        source_ids=source_ids,
+        event_count=total_events
+    )
+    
+    # Persist to Layer 3
+    await persist_brief(artifact)
     
     print(f"    ✅ Brief emitted: {len(brief_text)} chars")
     print(f"    📋 Next watchlist: {', '.join(next_watchlist) if next_watchlist else 'none'}")

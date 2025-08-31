@@ -4,8 +4,10 @@ Analyze node that processes events and computes signals.
 
 import time
 from datetime import datetime, timedelta
-from typing import Dict, Any
+from typing import Dict, Any, List
 from collections import Counter
+
+from data_model import normalize_event, NormalizedEvent
 
 
 async def analyze_node(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -30,6 +32,39 @@ async def analyze_node(state: Dict[str, Any]) -> Dict[str, Any]:
     # Filter events from last 24 hours
     cutoff_time = int((datetime.now() - timedelta(hours=24)).timestamp())
     recent_events = [e for e in events if e.get("timestamp", 0) >= cutoff_time]
+    
+    # Normalize events into Layer 2
+    normalized_events = []
+    source_ids = set()
+    
+    # Get source_ids from worker
+    worker_source_ids = state.get("source_ids", [])
+    source_ids.update(worker_source_ids)
+    
+    for event in recent_events:
+        # Use source_id from worker or generate one
+        source_id = event.get("provenance", {}).get("source_id", worker_source_ids[0] if worker_source_ids else f"event_{int(time.time())}")
+        source_ids.add(source_id)
+        
+        # Create normalized event
+        normalized_event = NormalizedEvent(
+            event_id=event.get("txHash", f"event_{int(time.time())}"),
+            wallet=event.get("wallet"),
+            event_type=event.get("kind", "unknown"),
+            pool=event.get("pool"),
+            value={
+                "amounts": event.get("amounts", {}),
+                "chain": event.get("chain", "base"),
+                "provenance": event.get("provenance", {})
+            },
+            timestamp=event.get("timestamp", int(time.time())),
+            source_id=source_id,
+            chain=event.get("chain", "base")
+        )
+        
+        # Save to Layer 2
+        await normalize_event(normalized_event)
+        normalized_events.append(normalized_event)
     
     # Count events by kind
     event_counts = Counter(e.get("kind", "unknown") for e in recent_events)
@@ -71,5 +106,7 @@ async def analyze_node(state: Dict[str, Any]) -> Dict[str, Any]:
         "last24h_counts": dict(event_counts),
         "top_pools": top_pools,
         "signals": signals,
+        "normalized_events": normalized_events,
+        "source_ids": list(source_ids),
         "status": "briefing"
     }

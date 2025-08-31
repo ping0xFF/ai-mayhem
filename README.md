@@ -119,7 +119,17 @@ python tests/test_planner_worker.py
 - **`nodes/memory.py`**: Memory node - persists artifacts and updates cursors
 - **Per-Node Timing**: Execution time tracking for all nodes
 
-### `json_storage.py` - Flexible Persistence
+### `data_model.py` - Three-Layer Data Model
+**Prevents state sprawl with clear data contracts:**
+
+- **Layer 1: Scratch JSON Cache**: Raw API/MCP responses with provenance
+- **Layer 2: Normalized Events**: Curated schema for recurring entities (wallet transfers, LP adds/removes)
+- **Layer 3: Artifacts/Briefs**: Human-readable summaries with full provenance chain
+- **Provenance Tracking**: End-to-end traceability from brief back to raw data
+- **Retention Rules**: Scratch (7d), Events (30d), Artifacts (90d)
+- **Idempotent Operations**: No duplicate upserts across all layers
+
+### `json_storage.py` - Flexible Persistence (Legacy)
 - **DatabaseManager**: SQLite-based JSON storage with WAL mode
 - **Upsert Operations**: Idempotent save/update operations
 - **Cursor Management**: Timestamp-based cursors for delta fetches
@@ -170,23 +180,31 @@ python demos/quick_verification.py
 # 2. Test the new nodes structure
 python tests/test_planner_worker.py
 
-# 3. Test JSON storage functionality  
+# 3. Test three-layer data model
+python tests/test_three_layer_data_model.py
+
+# 4. Test JSON storage functionality  
 python tests/test_json_storage.py
 
-# 4. Verify imports work correctly
+# 5. Demo three-layer data model
+python demos/three_layer_demo.py
+
+# 6. Verify imports work correctly
 python -c "from nodes import planner_node, worker_node, analyze_node, brief_node, memory_node; print('✅ All nodes imported successfully')"
 
-# 5. Check that old planner_worker.py is gone (should fail)
+# 7. Check that old planner_worker.py is gone (should fail)
 python -c "import planner_worker" 2>/dev/null && echo "❌ Old file still exists" || echo "✅ Old file properly removed"
 
-# 6. Full demo (may hang - use Ctrl+C if needed)
+# 8. Full demo (may hang - use Ctrl+C if needed)
 python demos/planner_worker_demo.py
 ```
 
 ### Expected Test Results
 - **`quick_verification.py`**: Should complete all tests without hanging
 - **`test_planner_worker.py`**: 4 tests should pass (planner selection, worker saves, analyze rollup, brief gating)
+- **`test_three_layer_data_model.py`**: 7 tests should pass (all three layers, provenance, idempotency)
 - **`test_json_storage.py`**: 12 tests should pass (upsert, query, delete, validation, etc.)
+- **`three_layer_demo.py`**: Should show complete flow with provenance chain
 - **Import test**: Should show "✅ All nodes imported successfully"
 - **Old file test**: Should show "✅ Old file properly removed"
 - **Full demo**: May hang after completion (use Ctrl+C if needed)
@@ -197,6 +215,38 @@ python demos/planner_worker_demo.py
 - **Analyze Processing**: Event counting and signal computation
 - **Brief Gating**: Thresholds and cooldown logic
 - **JSON Storage**: Upsert operations and cursor management
+
+## 🏗️ Three-Layer Data Model Architecture
+
+### Layer 1: Scratch JSON Cache
+**Purpose**: Store raw API/MCP responses without schema commitment
+- **Fields**: `id`, `source`, `timestamp`, `raw_json`, `provenance`
+- **Retention**: 7 days (purgeable)
+- **Usage**: Always written first by Worker node
+- **Example**: Raw wallet activity response from Nansen API
+
+### Layer 2: Normalized Events  
+**Purpose**: Curated schema for recurring entities
+- **Fields**: `event_id`, `wallet`, `event_type`, `pool`, `value`, `timestamp`, `source_id`, `chain`
+- **Retention**: 30 days (mid-term)
+- **Usage**: Written by Analyze node after parsing scratch JSON
+- **Example**: Normalized swap event with structured amounts and pool data
+
+### Layer 3: Artifacts/Briefs
+**Purpose**: Human-readable summaries and signals
+- **Fields**: `artifact_id`, `timestamp`, `summary_text`, `signals`, `next_watchlist`, `source_ids`, `event_count`
+- **Retention**: 90 days (long-term)
+- **Usage**: Written by Brief node, persisted by Memory node
+- **Example**: Daily brief with computed signals and watchlist
+
+### Provenance Chain
+Every artifact maintains full traceability:
+```
+Brief → Normalized Events → Raw Responses
+```
+- **End-to-end tracking**: From human-readable summary back to source data
+- **Audit trail**: Complete history of data transformations
+- **Debugging**: Easy to trace issues back to original API responses
 
 ## 🔄 Integration Points
 
