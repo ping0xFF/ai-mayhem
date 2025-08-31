@@ -247,8 +247,10 @@ class TestJsonStorageSync(unittest.TestCase):
         loaded = self.load_json("sync_test")
         self.assertEqual(loaded, test_data)
         
-        # Test query recent
-        recent = self.query_recent("test_source", limit=5)
+        # Test query recent - use a unique source to avoid conflicts
+        unique_source = f"test_source_{id(self)}"
+        self.save_json("sync_test_unique", unique_source, test_data)
+        recent = self.query_recent(unique_source, limit=5)
         self.assertEqual(len(recent), 1)
         self.assertEqual(recent[0], test_data)
 

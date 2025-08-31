@@ -119,4 +119,12 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n🛑 Demo interrupted by user")
+    finally:
+        # Force cleanup of any remaining tasks
+        import gc
+        gc.collect()
+        print("🧹 Cleanup completed")

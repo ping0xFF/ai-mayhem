@@ -107,12 +107,16 @@ python tests/test_planner_worker.py
 - **Graph Structure**: Budget → Planner → Worker → Analyze → Brief → Memory
 - **Wrapper Functions**: Async-to-sync wrappers for LangGraph compatibility
 
-### `planner_worker.py` - Planner/Worker Nodes
-- **planner_node()**: Selects action based on cursor staleness and budget
-- **worker_node()**: Executes tools and saves to JSON cache
-- **analyze_node()**: Processes events and computes signals
-- **brief_node()**: Gates output with thresholds and cooldowns
-- **memory_node()**: Persists artifacts and updates cursors
+### `nodes/` Directory - Professional Node Organization
+**Prevents "split brain" drift by isolating each node in its own file:**
+
+- **`nodes/__init__.py`**: Package exports for all nodes
+- **`nodes/config.py`**: Shared configuration constants (timeouts, thresholds)
+- **`nodes/planner.py`**: Planner node - selects action based on cursor staleness and budget
+- **`nodes/worker.py`**: Worker node - executes tools and saves to JSON cache
+- **`nodes/analyze.py`**: Analyze node - processes events and computes signals
+- **`nodes/brief.py`**: Brief node - gates output with thresholds and cooldowns
+- **`nodes/memory.py`**: Memory node - persists artifacts and updates cursors
 - **Per-Node Timing**: Execution time tracking for all nodes
 
 ### `json_storage.py` - Flexible Persistence
@@ -154,19 +158,38 @@ BRIEF_TIMEOUT = 10     # seconds
 MEMORY_TIMEOUT = 10    # seconds
 ```
 
-## 🧪 Testing
+## 🧪 Testing & Verification
 
-### Run All Tests
+### Quick Verification Commands
+**"Trust but verify" - Run these to confirm everything works:**
+
 ```bash
-# Planner/Worker tests
+# 1. Quick verification (recommended - no hanging issues)
+python demos/quick_verification.py
+
+# 2. Test the new nodes structure
 python tests/test_planner_worker.py
 
-# JSON storage tests
+# 3. Test JSON storage functionality  
 python tests/test_json_storage.py
 
-# Other tests
-python tests/test_*.py
+# 4. Verify imports work correctly
+python -c "from nodes import planner_node, worker_node, analyze_node, brief_node, memory_node; print('✅ All nodes imported successfully')"
+
+# 5. Check that old planner_worker.py is gone (should fail)
+python -c "import planner_worker" 2>/dev/null && echo "❌ Old file still exists" || echo "✅ Old file properly removed"
+
+# 6. Full demo (may hang - use Ctrl+C if needed)
+python demos/planner_worker_demo.py
 ```
+
+### Expected Test Results
+- **`quick_verification.py`**: Should complete all tests without hanging
+- **`test_planner_worker.py`**: 4 tests should pass (planner selection, worker saves, analyze rollup, brief gating)
+- **`test_json_storage.py`**: 12 tests should pass (upsert, query, delete, validation, etc.)
+- **Import test**: Should show "✅ All nodes imported successfully"
+- **Old file test**: Should show "✅ Old file properly removed"
+- **Full demo**: May hang after completion (use Ctrl+C if needed)
 
 ### Test Coverage
 - **Planner Logic**: Cursor staleness and action selection

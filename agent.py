@@ -26,7 +26,7 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 # Import our professional LLM client
 from llm_client import llm_call, get_model_stats, HAIKU_MODEL, SONNET_MODEL
-from planner_worker import planner_node as new_planner_node, worker_node as new_worker_node, analyze_node, brief_node, memory_node
+from nodes import planner_node as new_planner_node, worker_node as new_worker_node, analyze_node, brief_node, memory_node
 
 load_dotenv()
 

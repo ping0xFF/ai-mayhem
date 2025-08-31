@@ -163,7 +163,7 @@ class TestPlannerWorker(unittest.IsolatedAsyncioTestCase):
     
     async def test_planner_selection_with_cursors(self):
         """Test planner selection logic with cursor/budget inputs."""
-        from planner_worker import planner_node
+        from nodes.planner import planner_node
         
         # Test case 1: Wallet cursor stale (>2h) - should choose wallet_recon
         state = {
@@ -203,7 +203,7 @@ class TestPlannerWorker(unittest.IsolatedAsyncioTestCase):
     
     async def test_worker_idempotent_saves_and_provenance(self):
         """Test worker idempotent saves and provenance tracking."""
-        from planner_worker import worker_node
+        from nodes.worker import worker_node
         
         # Test wallet activity fetch
         state = {
@@ -235,7 +235,7 @@ class TestPlannerWorker(unittest.IsolatedAsyncioTestCase):
     
     async def test_analyze_last24h_rollup_counts_and_top_pools(self):
         """Test analyze rollup correctness on small fixture."""
-        from planner_worker import analyze_node
+        from nodes.analyze import analyze_node
         
         # Create state with mock events
         state = {
@@ -269,7 +269,7 @@ class TestPlannerWorker(unittest.IsolatedAsyncioTestCase):
     
     async def test_brief_gate_emit_vs_skip(self):
         """Test brief gate behavior (emit/skip)."""
-        from planner_worker import brief_node
+        from nodes.brief import brief_node
         
         # Test case 1: High activity - should emit brief
         state = {
