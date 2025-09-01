@@ -345,6 +345,7 @@ def fetch_wallet_activity_bitquery(address: str, chain: str = "base", since_ts: 
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(run_covalent_in_thread)
                 result = future.result(timeout=120)  # 2 minute timeout
+                print(f"    ✅ Final provider used: Covalent")
                 return result
 
         except concurrent.futures.TimeoutError:
@@ -375,6 +376,7 @@ def fetch_wallet_activity_bitquery(address: str, chain: str = "base", since_ts: 
                 with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                     future = executor.submit(run_bitquery_in_thread)
                     result = future.result(timeout=120)  # 2 minute timeout
+                    print(f"    ✅ Final provider used: Bitquery")
                     return result
 
             except concurrent.futures.TimeoutError:
@@ -385,7 +387,9 @@ def fetch_wallet_activity_bitquery(address: str, chain: str = "base", since_ts: 
 
     # Use mock implementation (final fallback)
     print("    🟡 Using MOCK wallet activity API (fallback)")
-    return _fetch_wallet_activity_bitquery_mock(address, chain, since_ts)
+    result = _fetch_wallet_activity_bitquery_mock(address, chain, since_ts)
+    print(f"    ✅ Final provider used: Mock")
+    return result
 
 
 def _fetch_wallet_activity_bitquery_mock(address: str, chain: str = "base", since_ts: int = 0) -> Dict[str, Any]:
