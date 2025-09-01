@@ -125,13 +125,38 @@ async def analyze_node(state: Dict[str, Any]) -> Dict[str, Any]:
                     total_remove_value += abs(details["lp_tokens_delta"])
         
         lp_signals["net_liquidity_value"] = total_add_value - total_remove_value
-    
+
+    # Wallet-specific signals (for wallet_recon actions)
+    wallet_signals = {}
+    selected_action = state.get("selected_action")
+
+    if selected_action == "wallet_recon":
+        # net_lp_usd_24h: Sum of LP adds minus LP removes in USD
+        net_lp_usd = 0.0
+        for event in lp_events:
+            usd_value = event.get("usd")
+            if usd_value is not None:
+                if event.get("kind") == "lp_add":
+                    net_lp_usd += usd_value
+                elif event.get("kind") == "lp_remove":
+                    net_lp_usd -= usd_value
+        wallet_signals["net_lp_usd_24h"] = net_lp_usd
+
+        # new_pools_touched_24h: Distinct pool addresses from recent events
+        all_pools = set()
+        for event in recent_events:
+            pool = event.get("pool")
+            if pool and pool != "unknown":
+                all_pools.add(pool)
+        wallet_signals["new_pools_touched_24h"] = list(all_pools)
+
     signals = {
         "volume_signal": volume_signal,
         "activity_signal": activity_signal,
         "concentration_signal": concentration_signal,
         "total_events_24h": total_events,
-        **lp_signals  # Include LP-specific signals
+        **lp_signals,  # Include LP-specific signals
+        **wallet_signals  # Include wallet-specific signals
     }
     
     print(f"    📈 24h events: {total_events}")
@@ -143,6 +168,13 @@ async def analyze_node(state: Dict[str, Any]) -> Dict[str, Any]:
         print(f"    💧 LP Signals: net_delta={lp_signals.get('net_liquidity_delta_24h', 0)}, "
               f"churn_rate={lp_signals.get('lp_churn_rate_24h', 0):.2f}, "
               f"activity_score={lp_signals.get('pool_activity_score', 0):.2f}")
+
+    # Print wallet-specific signals if available
+    if wallet_signals:
+        net_lp_usd = wallet_signals.get('net_lp_usd_24h', 0)
+        new_pools = wallet_signals.get('new_pools_touched_24h', [])
+        print(f"    👛 Wallet Signals: net_lp_usd_24h=${net_lp_usd:.2f}, "
+              f"new_pools_touched_24h={len(new_pools)} pools")
     
     execution_time = time.time() - start_time
     print(f"    ✅ Analyze completed in {execution_time:.2f}s")

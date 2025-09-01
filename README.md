@@ -95,6 +95,15 @@ Create `.env` file:
 # Budget settings
 BUDGET_DAILY=5.0
 
+# Bitquery API (for live wallet activity)
+# Get your API key from: https://streaming.bitquery.io/
+# You'll need to set up billing to use the API
+BITQUERY_API_KEY=your_api_key_here
+BITQUERY_LIVE=0  # Set to 1 for live API, 0 for mock
+
+# Optional: Enable verbose logging for debugging
+BITQUERY_VERBOSE=1
+
 # LiteLLM settings (if using local proxy)
 LITELLM_URL=http://localhost:8000
 OPENAI_API_KEY=your_key_here
@@ -460,10 +469,21 @@ This project now includes **comprehensive LP (Liquidity Provider) monitoring** c
 # 🏆 Complete LP monitoring demonstration
 python demos/lp_e2e_demo.py
 
+# 🔥 Live Bitquery wallet reconnaissance (requires API key)
+python demos/wallet_recon_live.py       # Live wallet activity demo
+
 # LP-specific test suites
 python tests/test_enhanced_lp.py        # Core LP functionality
 python tests/test_lp_brief_gating.py    # LP brief gating logic
 ```
+
+#### 🔴 Live Bitquery Integration
+- **Environment**: Set `BITQUERY_LIVE=1` and `BITQUERY_ACCESS_TOKEN` (or `BITQUERY_API_KEY`) for live data
+- **Authentication**: Uses Bearer token authentication with your access token
+- **Fallback**: Automatically falls back to mock data if access token missing
+- **Raw-First**: Preserves complete Bitquery response with full provenance
+- **Rate Limiting**: Built-in retry logic with exponential backoff
+- **Pagination**: Handles large result sets with offset-based pagination
 
 ## 🤖 Built with grok-code-fast-1
 

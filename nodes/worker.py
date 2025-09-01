@@ -8,7 +8,7 @@ from typing import Dict, Any
 
 from json_storage import get_cursor, set_cursor
 from data_model import save_raw_response, NormalizedEvent
-from mock_tools import fetch_wallet_activity, fetch_lp_activity, web_metrics_lookup
+from mock_tools import fetch_wallet_activity, fetch_lp_activity, web_metrics_lookup, fetch_wallet_activity_bitquery
 
 
 async def worker_node(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -34,32 +34,35 @@ async def worker_node(state: Dict[str, Any]) -> Dict[str, Any]:
             wallet = state.get("target_wallet")
             if not wallet:
                 raise ValueError("No target wallet specified")
-            
+
             # Get cursor for this wallet
             cursor_key = f"wallet:{wallet}"
             since_ts = state.get("cursors", {}).get(cursor_key, 0)
-            
-            # Fetch wallet activity
-            wallet_events = fetch_wallet_activity(wallet, since_ts)
-            
-            # Save raw data to Layer 1
-            raw_id = f"wallet_activity_{wallet}_{since_ts}"
-            await save_raw_response(raw_id, "wallet_activity", {
-                "wallet": wallet,
+
+            # Fetch wallet activity using Bitquery adapter
+            response = fetch_wallet_activity_bitquery(wallet, "base", since_ts)
+
+            # Save raw data to Layer 1 (raw-first approach)
+            raw_id = f"bitquery_wallet_{wallet}_{since_ts}_{int(datetime.now().timestamp())}"
+            await save_raw_response(raw_id, "wallet_activity", response, provenance={
+                "source": "bitquery",
+                "address": wallet,
+                "chain": "base",
                 "since_ts": since_ts,
-                "events": wallet_events,
-                "timestamp": int(datetime.now().timestamp())
-            }, provenance={
-                "source": "mock_tools",
-                "wallet": wallet,
-                "since_ts": since_ts,
-                "snapshot_time": int(datetime.now().timestamp())
+                "snapshot_time": int(datetime.now().timestamp()),
+                "provider": "bitquery"
             })
-            
-            events = wallet_events
-            raw_data = {"wallet": wallet, "event_count": len(events)}
+
+            # Extract events from response (keep raw structure)
+            events = response.get("events", [])
+            raw_data = {
+                "wallet": wallet,
+                "provider": response.get("provider"),
+                "event_count": len(events),
+                "next_cursor": response.get("next_cursor")
+            }
             source_ids.append(raw_id)
-            
+
             # Update cursor
             new_cursor = int(datetime.now().timestamp())
             await set_cursor(cursor_key, new_cursor, f"Last wallet activity fetch for {wallet}")
