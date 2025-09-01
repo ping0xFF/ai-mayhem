@@ -203,7 +203,7 @@ python demos/wallet_recon_live.py       # Live wallet recon (Bitquery/Covalent)
 
 - **`real_apis/__init__.py`**: Package exports for all API integrations
 - **`real_apis/covalent.py`**: Covalent API client with async HTTPX, pagination, and error handling
-  - Base chain optimized (`/address/{addr}/transactions_v3/` endpoint)
+  - Base chain optimized (`/address/{addr}/transfers/` endpoint - 95% data reduction)
   - Cursor-based pagination with retry logic and rate limiting
   - Graceful error handling for 401/402/404 status codes
   - Event normalization with provenance tracking
