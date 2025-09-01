@@ -68,8 +68,9 @@ async def worker_node(state: Dict[str, Any]) -> Dict[str, Any]:
             # Get LP cursor
             since_ts = state.get("cursors", {}).get("lp", 0)
             
-            # Fetch LP activity
-            lp_events = fetch_lp_activity(since_ts)
+            # Fetch LP activity (use realistic fixtures for demo, simple for tests)
+            use_realistic = state.get("use_realistic_fixtures", False)
+            lp_events = fetch_lp_activity(since_ts, use_realistic=use_realistic)
             
             # Save raw data to Layer 1
             raw_id = f"lp_activity_{since_ts}"

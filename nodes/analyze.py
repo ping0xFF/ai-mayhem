@@ -46,17 +46,24 @@ async def analyze_node(state: Dict[str, Any]) -> Dict[str, Any]:
         source_id = event.get("provenance", {}).get("source_id", worker_source_ids[0] if worker_source_ids else f"event_{int(time.time())}")
         source_ids.add(source_id)
         
+        # Enhanced value dict with LP-specific details
+        value_dict = {
+            "amounts": event.get("amounts", {}),
+            "chain": event.get("chain", "base"),
+            "provenance": event.get("provenance", {})
+        }
+        
+        # Add LP-specific details if available
+        if event.get("details"):
+            value_dict["details"] = event["details"]
+        
         # Create normalized event
         normalized_event = NormalizedEvent(
             event_id=event.get("txHash", f"event_{int(time.time())}"),
             wallet=event.get("wallet"),
             event_type=event.get("kind", "unknown"),
             pool=event.get("pool"),
-            value={
-                "amounts": event.get("amounts", {}),
-                "chain": event.get("chain", "base"),
-                "provenance": event.get("provenance", {})
-            },
+            value=value_dict,
             timestamp=event.get("timestamp", int(time.time())),
             source_id=source_id,
             chain=event.get("chain", "base")
@@ -73,7 +80,7 @@ async def analyze_node(state: Dict[str, Any]) -> Dict[str, Any]:
     pool_counts = Counter(e.get("pool", "unknown") for e in recent_events)
     top_pools = [pool for pool, count in pool_counts.most_common(5)]
     
-    # Compute signals
+    # Compute base signals
     total_events = len(recent_events)
     volume_signal = min(total_events / 10.0, 1.0)  # Normalize to 0-1
     
@@ -87,16 +94,55 @@ async def analyze_node(state: Dict[str, Any]) -> Dict[str, Any]:
     else:
         concentration_signal = 0.0
     
+    # LP-specific signals
+    lp_signals = {}
+    lp_events = [e for e in recent_events if e.get("kind") in ["lp_add", "lp_remove"]]
+    
+    if lp_events:
+        # Net liquidity delta (adds - removes)
+        adds = sum(1 for e in lp_events if e.get("kind") == "lp_add")
+        removes = sum(1 for e in lp_events if e.get("kind") == "lp_remove")
+        net_delta = adds - removes
+        lp_signals["net_liquidity_delta_24h"] = net_delta
+        
+        # LP churn rate (unique LPs / total LP ops)
+        unique_lps = len(set(e.get("wallet", "unknown") for e in lp_events if e.get("wallet")))
+        lp_signals["lp_churn_rate_24h"] = unique_lps / len(lp_events) if lp_events else 0
+        
+        # Pool activity score (simple heuristic 0-1)
+        pool_activity_score = min(len(lp_events) / 5.0, 1.0)  # 5+ events = max score
+        lp_signals["pool_activity_score"] = pool_activity_score
+        
+        # Net liquidity value (if details available)
+        total_add_value = 0
+        total_remove_value = 0
+        for event in lp_events:
+            details = event.get("details", {})
+            if details.get("lp_tokens_delta"):
+                if event.get("kind") == "lp_add":
+                    total_add_value += abs(details["lp_tokens_delta"])
+                else:
+                    total_remove_value += abs(details["lp_tokens_delta"])
+        
+        lp_signals["net_liquidity_value"] = total_add_value - total_remove_value
+    
     signals = {
         "volume_signal": volume_signal,
         "activity_signal": activity_signal,
         "concentration_signal": concentration_signal,
-        "total_events_24h": total_events
+        "total_events_24h": total_events,
+        **lp_signals  # Include LP-specific signals
     }
     
     print(f"    📈 24h events: {total_events}")
     print(f"    🏊 Top pools: {', '.join(top_pools[:3])}")
     print(f"    📊 Signals: volume={volume_signal:.2f}, activity={activity_signal:.2f}")
+    
+    # Print LP-specific signals if available
+    if lp_signals:
+        print(f"    💧 LP Signals: net_delta={lp_signals.get('net_liquidity_delta_24h', 0)}, "
+              f"churn_rate={lp_signals.get('lp_churn_rate_24h', 0):.2f}, "
+              f"activity_score={lp_signals.get('pool_activity_score', 0):.2f}")
     
     execution_time = time.time() - start_time
     print(f"    ✅ Analyze completed in {execution_time:.2f}s")

@@ -41,12 +41,18 @@ async def brief_node(state: Dict[str, Any]) -> Dict[str, Any]:
     signals = state.get("signals", {})
     
     total_events = sum(event_counts.values())
-    max_signal = max(signals.values()) if signals else 0.0
     
-    # Check thresholds
-    if total_events < BRIEF_THRESHOLD_EVENTS and max_signal < BRIEF_THRESHOLD_SIGNAL:
+    # Separate general signals from LP-specific signals
+    general_signals = {k: v for k, v in signals.items() if k in ['volume_signal', 'activity_signal', 'concentration_signal']}
+    max_general_signal = max(general_signals.values()) if general_signals else 0.0
+    
+    # Check thresholds (including LP-specific thresholds)
+    lp_activity_score = signals.get("pool_activity_score", 0.0)
+    lp_threshold_met = lp_activity_score >= 0.6  # LP-specific threshold
+    
+    if total_events < BRIEF_THRESHOLD_EVENTS and max_general_signal < BRIEF_THRESHOLD_SIGNAL and not lp_threshold_met:
         execution_time = time.time() - start_time
-        print(f"    📉 Low activity: {total_events} events, max signal {max_signal:.2f}")
+        print(f"    📉 Low activity: {total_events} events, max general signal {max_general_signal:.2f}, LP score {lp_activity_score:.2f}")
         print(f"    ✅ Brief completed in {execution_time:.2f}s")
         return {
             **state,
@@ -62,14 +68,27 @@ async def brief_node(state: Dict[str, Any]) -> Dict[str, Any]:
     if top_pools:
         brief_text += f"Top pools: {', '.join(top_pools[:3])}. "
     
+    # Add LP-specific information if available
+    lp_signals = {k: v for k, v in signals.items() if k.startswith(('net_liquidity', 'lp_churn', 'pool_activity'))}
+    if lp_signals:
+        brief_text += f"LP activity: net delta {lp_signals.get('net_liquidity_delta_24h', 0)}, "
+        brief_text += f"churn rate {lp_signals.get('lp_churn_rate_24h', 0):.2f}, "
+        brief_text += f"activity score {lp_signals.get('pool_activity_score', 0):.2f}. "
+    
     if signals:
-        brief_text += f"Signals: volume={signals.get('volume_signal', 0):.2f}, "
+        brief_text += f"General signals: volume={signals.get('volume_signal', 0):.2f}, "
         brief_text += f"activity={signals.get('activity_signal', 0):.2f}. "
     
     # Generate next watchlist
     next_watchlist = []
     if top_pools:
         next_watchlist.extend(top_pools[:2])
+    
+    # Add LP-specific pools with high activity
+    if lp_signals and lp_signals.get("pool_activity_score", 0) > 0.5:
+        # Add pools with high LP activity to watchlist
+        if top_pools:
+            next_watchlist.extend([f"{pool} (LP)" for pool in top_pools[:2]])
     
     # Add any high-signal pools from raw data
     raw_data = state.get("raw_data", {})
