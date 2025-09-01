@@ -37,19 +37,35 @@ Analyze (processes events) → Brief (gates output) → Memory (persists artifac
 ```
 ai-mayhem/
 ├── agent.py                 # Main LangGraph agent with integrated Planner/Worker
-├── planner_worker.py        # Planner/Worker nodes implementation
-├── json_storage.py          # Flexible JSON persistence layer
-├── mock_tools.py            # Mock implementations of blockchain tools
+├── data_model.py            # Three-layer data model (Scratch → Events → Artifacts)
+├── json_storage.py          # Flexible JSON persistence layer (legacy)
+├── mock_tools.py            # Enhanced mock tools with simple/realistic fixtures
 ├── llm_client.py            # LLM client with cost tracking
 ├── agent_state.db           # SQLite database (persistent state)
+├── cli.py                   # Command-line interface
 ├── requirements.txt         # Python dependencies
 ├── config.yaml              # LiteLLM configuration
-├── demos/
-│   └── planner_worker_demo.py  # Integration demo
-├── tests/
+├── nodes/                   # Professional node organization
+│   ├── __init__.py         # Node package exports
+│   ├── config.py           # Shared configuration constants
+│   ├── planner.py          # Planner node - action selection logic
+│   ├── worker.py           # Worker node - tool execution & raw data save
+│   ├── analyze.py          # Analyze node - signal computation & normalization
+│   ├── brief.py            # Brief node - LP-focused gating & summaries
+│   └── memory.py           # Memory node - cursor updates & artifact persistence
+├── demos/                   # Comprehensive demo suite
+│   ├── lp_e2e_demo.py      # Complete LP monitoring end-to-end demo
+│   ├── planner_worker_demo.py  # Planner/Worker integration demo
+│   ├── quick_verification.py   # Quick verification without hanging
+│   └── three_layer_demo.py     # Three-layer data model demonstration
+├── tests/                   # Comprehensive test suite
+│   ├── test_enhanced_lp.py     # Enhanced LP functionality tests
+│   ├── test_lp_brief_gating.py # LP brief gating tests
 │   ├── test_planner_worker.py  # TDD tests for Planner/Worker
+│   ├── test_three_layer_data_model.py  # Three-layer data model tests
 │   ├── test_json_storage.py    # JSON storage tests
-│   └── test_*.py               # Other test files
+│   ├── test_agent.py           # Main agent tests
+│   └── test_live.py            # Live integration tests
 ├── data/
 │   └── raw/
 │       └── nansen_real_api_response.json  # Sample API responses
@@ -92,11 +108,19 @@ NANSEN_API_KEY=your_nansen_key_here
 ### 3. Run Demo
 
 ```bash
-# Run the integrated Planner/Worker demo
+# 🏆 RECOMMENDED: Complete LP monitoring end-to-end demo
+python demos/lp_e2e_demo.py
+
+# Quick verification (no hanging issues)
+python demos/quick_verification.py
+
+# Original Planner/Worker demo
 python demos/planner_worker_demo.py
 
-# Run tests
-python tests/test_planner_worker.py
+# Run comprehensive test suite
+python tests/test_enhanced_lp.py        # LP functionality tests
+python tests/test_lp_brief_gating.py    # LP brief gating tests
+python tests/test_planner_worker.py     # Core Planner/Worker tests
 ```
 
 ## 📊 Core Files Explained
@@ -159,6 +183,13 @@ BRIEF_THRESHOLD_EVENTS = 5        # Minimum events
 BRIEF_THRESHOLD_SIGNAL = 0.6      # Minimum signal strength
 ```
 
+### LP-Specific Configuration
+```python
+LP_ACTIVITY_THRESHOLD = 0.6       # LP activity score threshold for brief emission
+LP_CHURN_THRESHOLD = 0.8          # LP churn rate for high activity detection
+LP_ACTIVITY_SCORE_MAX = 1.0       # Maximum LP activity score (5+ events)
+```
+
 ### Per-Node Timeouts
 ```python
 PLANNER_TIMEOUT = 10   # seconds
@@ -200,7 +231,10 @@ python demos/planner_worker_demo.py
 ```
 
 ### Expected Test Results
+- **`lp_e2e_demo.py`**: Complete LP monitoring flow with 5 events, signals, and provenance
 - **`quick_verification.py`**: Should complete all tests without hanging
+- **`test_enhanced_lp.py`**: 7 tests should pass (LP tools, worker saves, normalization, signals, idempotency)
+- **`test_lp_brief_gating.py`**: 7 tests should pass (LP gating, artifact persistence, provenance, thresholds)
 - **`test_planner_worker.py`**: 4 tests should pass (planner selection, worker saves, analyze rollup, brief gating)
 - **`test_three_layer_data_model.py`**: 7 tests should pass (all three layers, provenance, idempotency)
 - **`test_json_storage.py`**: 12 tests should pass (upsert, query, delete, validation, etc.)
@@ -210,11 +244,16 @@ python demos/planner_worker_demo.py
 - **Full demo**: May hang after completion (use Ctrl+C if needed)
 
 ### Test Coverage
+- **LP Tools**: Enhanced mock tools with simple/realistic fixtures
+- **Three-Layer Data Flow**: Scratch → Events → Artifacts with provenance
+- **LP-Specific Signals**: Net liquidity delta, churn rate, activity score
+- **LP Brief Gating**: LP-focused thresholds and heatmap generation
 - **Planner Logic**: Cursor staleness and action selection
 - **Worker Behavior**: Tool execution and idempotent saves
 - **Analyze Processing**: Event counting and signal computation
 - **Brief Gating**: Thresholds and cooldown logic
 - **JSON Storage**: Upsert operations and cursor management
+- **Idempotent Operations**: No duplicate data across all layers
 
 ## 🏗️ Three-Layer Data Model Architecture
 
@@ -366,6 +405,48 @@ python demos/planner_worker_demo.py
 sqlite3 agent_state.db ".tables"
 sqlite3 agent_state.db "SELECT * FROM json_cache_scratch LIMIT 5;"
 ```
+
+## 💧 LP Monitoring Features
+
+This project now includes **comprehensive LP (Liquidity Provider) monitoring** capabilities:
+
+### LP-Specific Signals
+- **Net Liquidity Delta**: Tracks adds minus removes over 24h
+- **LP Churn Rate**: Unique LPs / total LP operations (diversity metric)
+- **Pool Activity Score**: Activity heuristic based on event volume
+- **Net Liquidity Value**: Token-value weighted LP movements
+
+### Enhanced Brief Generation
+- **LP Heatmap**: Automatic inclusion of high-activity pools in watchlists
+- **LP Threshold Gating**: Briefs emit when `pool_activity_score >= 0.6`
+- **LP-Specific Content**: Detailed LP metrics in brief summaries
+- **Provenance Tracking**: Full traceability from brief → events → raw data
+
+### Demo & Testing
+```bash
+# 🏆 Complete LP monitoring demonstration
+python demos/lp_e2e_demo.py
+
+# LP-specific test suites
+python tests/test_enhanced_lp.py        # Core LP functionality
+python tests/test_lp_brief_gating.py    # LP brief gating logic
+```
+
+## 🤖 Built with grok-code-fast-1
+
+This project was developed using **grok-code-fast-1**, which excels at:
+- **Complex multi-step implementations** with clear reasoning
+- **Comprehensive error handling** and edge case coverage
+- **Production-ready code** with proper async patterns
+- **Thorough testing** with TDD approach
+- **Clean architecture** decisions and documentation
+
+The model demonstrated exceptional capability in:
+- **Task decomposition**: Breaking down complex requirements into manageable phases
+- **Implementation planning**: Creating detailed implementation strategies
+- **Code quality**: Producing well-structured, documented, and maintainable code
+- **Testing strategy**: Building comprehensive test suites with proper isolation
+- **Documentation**: Maintaining up-to-date project documentation
 
 ---
 
