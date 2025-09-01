@@ -204,23 +204,35 @@ class TestPlannerWorker(unittest.IsolatedAsyncioTestCase):
     async def test_worker_idempotent_saves_and_provenance(self):
         """Test worker idempotent saves and provenance tracking."""
         from nodes.worker import worker_node
-        
-        # Test wallet activity fetch
-        state = {
-            "selected_action": "wallet_recon",
-            "target_wallet": "0x1234567890abcdef1234567890abcdef12345678"
-        }
-        
-        result = await worker_node(state)
-        
-        # Verify events were saved
-        self.assertIn("events", result)
-        self.assertGreater(len(result["events"]), 0)
-        
-        # Verify provenance
-        for event in result["events"]:
-            self.assertIn("provenance", event)
-            self.assertEqual(event["provenance"]["source"], "mock")
+        import os
+
+        # Ensure we use mock data for this test
+        original_live = os.environ.get("BITQUERY_LIVE", "0")
+        os.environ["BITQUERY_LIVE"] = "0"
+
+        try:
+            # Test wallet activity fetch
+            state = {
+                "selected_action": "wallet_recon",
+                "target_wallet": "0x1234567890abcdef1234567890abcdef12345678"
+            }
+
+            result = await worker_node(state)
+
+            # Verify events were saved
+            self.assertIn("events", result)
+            self.assertGreater(len(result["events"]), 0)
+
+            # Verify provenance
+            for event in result["events"]:
+                self.assertIn("provenance", event)
+                self.assertEqual(event["provenance"]["source"], "mock")
+        finally:
+            # Restore original environment
+            if original_live:
+                os.environ["BITQUERY_LIVE"] = original_live
+            elif "BITQUERY_LIVE" in os.environ:
+                del os.environ["BITQUERY_LIVE"]
         
         # Test idempotency - run again with same state
         result2 = await worker_node(state)
@@ -229,8 +241,15 @@ class TestPlannerWorker(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result["events"]), len(result2["events"]))
         
         # Verify deterministic IDs were used
-        event_ids = [f"{event['txHash']}:{event['logIndex']}" for event in result["events"]]
-        event_ids2 = [f"{event['txHash']}:{event['logIndex']}" for event in result2["events"]]
+        # Handle both old format (txHash/logIndex) and new Bitquery format (tx)
+        if 'txHash' in result["events"][0]:
+            # Old format
+            event_ids = [f"{event['txHash']}:{event['logIndex']}" for event in result["events"]]
+            event_ids2 = [f"{event['txHash']}:{event['logIndex']}" for event in result2["events"]]
+        else:
+            # New Bitquery format
+            event_ids = [event['tx'] for event in result["events"]]
+            event_ids2 = [event['tx'] for event in result2["events"]]
         self.assertEqual(event_ids, event_ids2)
     
     async def test_analyze_last24h_rollup_counts_and_top_pools(self):

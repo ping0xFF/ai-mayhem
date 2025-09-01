@@ -20,12 +20,12 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import the agent code
 from agent import (
-    AgentState, 
-    LangGraphAgent, 
-    planner_node, 
-    worker_node, 
+    AgentState,
+    LangGraphAgent,
     should_continue
 )
+from nodes.planner import planner_node
+from nodes.worker import worker_node
 from llm_client import llm_call
 # Removed BaseMessage import - now using strings for messages
 
@@ -101,7 +101,7 @@ class TestNodeFunctions(unittest.TestCase):
         }
     
     @patch('agent.llm_call')
-    def test_planner_node_success(self, mock_llm_call):
+    async def test_planner_node_success(self, mock_llm_call):
         """Test planner node creates a valid plan."""
         # Mock LLM response
         mock_plan = ["Step 1: Design", "Step 2: Implement", "Step 3: Test"]
@@ -112,8 +112,8 @@ class TestNodeFunctions(unittest.TestCase):
             "estimated_cost": 0.0001
         }
         
-        result = planner_node(self.initial_state)
-        
+        result = await planner_node(self.initial_state)
+
         # Verify plan was created
         self.assertEqual(result["plan"], mock_plan)
         self.assertEqual(result["current_step"], 0)
@@ -126,7 +126,7 @@ class TestNodeFunctions(unittest.TestCase):
         self.assertTrue(mock_llm_call.called)
     
     @patch('agent.llm_call')
-    def test_planner_node_json_error(self, mock_llm_call):
+    async def test_planner_node_json_error(self, mock_llm_call):
         """Test planner node handles invalid JSON response."""
         # Mock invalid JSON response
         mock_llm_call.return_value = {
@@ -136,8 +136,8 @@ class TestNodeFunctions(unittest.TestCase):
             "estimated_cost": 0.0001
         }
         
-        result = planner_node(self.initial_state)
-        
+        result = await planner_node(self.initial_state)
+
         # Verify error handling
         self.assertEqual(result["status"], "failed")
         self.assertEqual(len(result["plan"]), 0)
@@ -145,21 +145,21 @@ class TestNodeFunctions(unittest.TestCase):
         # Check error message was added
         self.assertTrue(any("AI(error): Failed to create plan" in msg for msg in result["messages"] if isinstance(msg, str)))
     
-    def test_planner_node_existing_plan(self):
+    async def test_planner_node_existing_plan(self):
         """Test planner node with existing plan."""
         state_with_plan = self.initial_state.copy()
         state_with_plan["plan"] = ["Existing step"]
         state_with_plan["current_step"] = 0
         state_with_plan["completed_actions"] = []
         
-        result = planner_node(state_with_plan)
-        
+        result = await planner_node(state_with_plan)
+
         # Should set status to working since plan exists
         self.assertEqual(result["status"], "working")
         self.assertEqual(result["plan"], ["Existing step"])
     
     @patch('agent.llm_call')
-    def test_worker_node_execution(self, mock_llm_call):
+    async def test_worker_node_execution(self, mock_llm_call):
         """Test worker node executes a step."""
         # Setup state with plan
         state_with_plan = self.initial_state.copy()
@@ -174,8 +174,8 @@ class TestNodeFunctions(unittest.TestCase):
             "estimated_cost": 0.0002
         }
         
-        result = worker_node(state_with_plan)
-        
+        result = await worker_node(state_with_plan)
+
         # Verify step execution
         self.assertEqual(result["current_step"], 1)
         self.assertEqual(len(result["completed_actions"]), 1)
@@ -187,15 +187,15 @@ class TestNodeFunctions(unittest.TestCase):
         self.assertEqual(action["description"], "Write unit tests")
         self.assertIn("unit tests", action["result"])
     
-    def test_worker_node_completion(self):
+    async def test_worker_node_completion(self):
         """Test worker node when all steps are completed."""
         # Setup state with completed plan
         state_completed = self.initial_state.copy()
         state_completed["plan"] = ["Step 1"]
         state_completed["current_step"] = 1  # Beyond plan length
         
-        result = worker_node(state_completed)
-        
+        result = await worker_node(state_completed)
+
         # Should mark as completed
         self.assertEqual(result["status"], "completed")
     
@@ -204,12 +204,12 @@ class TestNodeFunctions(unittest.TestCase):
         # Test planning status
         planning_state = self.initial_state.copy()
         planning_state["status"] = "planning"
-        self.assertEqual(should_continue(planning_state), "plan")
+        self.assertEqual(should_continue(planning_state), "new_plan")
         
         # Test working status
         working_state = self.initial_state.copy()
         working_state["status"] = "working"
-        self.assertEqual(should_continue(working_state), "work")
+        self.assertEqual(should_continue(working_state), "new_work")
         
         # Test completed status
         completed_state = self.initial_state.copy()

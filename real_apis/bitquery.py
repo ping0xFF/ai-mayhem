@@ -351,6 +351,14 @@ async def fetch_wallet_activity_bitquery_live(
                 event["direction"] = "in"
                 event["counterparty"] = transfer["sender"]["address"]
 
+            # Add provenance (matching mock format for test compatibility)
+            event["provenance"] = {
+                "source": "bitquery",
+                "snapshot": current_ts,
+                "wallet": address,
+                "since_ts": since_ts
+            }
+
             events.append(event)
 
         except KeyError as e:
@@ -378,6 +386,14 @@ async def fetch_wallet_activity_bitquery_live(
                     "block": trade["block"],
                     "transaction": trade["transaction"]
                 }
+            }
+
+            # Add provenance (matching mock format for test compatibility)
+            event["provenance"] = {
+                "source": "bitquery",
+                "snapshot": current_ts,
+                "wallet": address,
+                "since_ts": since_ts
             }
 
             events.append(event)

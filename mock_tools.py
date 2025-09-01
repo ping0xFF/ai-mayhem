@@ -388,6 +388,14 @@ def _fetch_wallet_activity_bitquery_mock(address: str, chain: str = "base", sinc
             event["pool"] = f"0x{hashlib.md5(f'pool_{wallet_seed}_{i}'.encode()).hexdigest()[:40]}"
             event["usd"] = (wallet_seed + i * 50) * 2.0
 
+        # Add provenance (matching test expectations)
+        event["provenance"] = {
+            "source": "mock",
+            "snapshot": current_ts,
+            "wallet": address,
+            "since_ts": since_ts
+        }
+
         mock_events.append(event)
 
     return {

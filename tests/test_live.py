@@ -4,7 +4,7 @@ Test script for the LangGraph agent.
 """
 
 import asyncio
-from langgraph_agent import LangGraphAgent
+from agent import LangGraphAgent
 
 
 async def test_agent():
