@@ -132,21 +132,29 @@ async def analyze_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
     if selected_action == "wallet_recon":
         # net_lp_usd_24h: Sum of LP adds minus LP removes in USD
+        # Handle both legacy format (kind: lp_add/lp_remove) and new format (type: swap/transfer)
         net_lp_usd = 0.0
-        for event in lp_events:
+        for event in recent_events:
             usd_value = event.get("usd")
             if usd_value is not None:
-                if event.get("kind") == "lp_add":
+                # Check legacy format first
+                event_type = event.get("kind") or event.get("type")
+                if event_type in ["lp_add", "swap"] and event.get("direction") != "out":
                     net_lp_usd += usd_value
-                elif event.get("kind") == "lp_remove":
+                elif event_type in ["lp_remove"] and event.get("direction") == "out":
                     net_lp_usd -= usd_value
         wallet_signals["net_lp_usd_24h"] = net_lp_usd
 
         # new_pools_touched_24h: Distinct pool addresses from recent events
+        # Handle both legacy pool field and new contract addresses
         all_pools = set()
         for event in recent_events:
-            pool = event.get("pool")
-            if pool and pool != "unknown":
+            # Try multiple ways to find pool addresses
+            pool = (event.get("pool") or
+                   event.get("token_address") or
+                   event.get("raw", {}).get("covalent_tx", {}).get("to_address"))
+
+            if pool and pool != "unknown" and pool != "0x0000000000000000000000000000000000000000":
                 all_pools.add(pool)
         wallet_signals["new_pools_touched_24h"] = list(all_pools)
 

@@ -277,11 +277,25 @@ def filter_events_by_time(events: List[Dict[str, Any]], since_ts: int) -> List[D
     return [event for event in events if event["timestamp"] >= since_ts]
 
 
-# Bitquery Wallet Activity Adapter (v1) with Live Toggle
+# Cursor management for wallet recon sources
+# TODO: Implement proper cursor management with async handling
+def _get_wallet_cursor(wallet_address: str, source: str) -> Optional[str]:
+    """Get stored cursor for wallet recon pagination."""
+    # Simplified for now - no cursor management to avoid async complexity
+    return None
+
+
+def _save_wallet_cursor(wallet_address: str, source: str, cursor: str):
+    """Save cursor for wallet recon pagination."""
+    # Simplified for now - no cursor saving to avoid async complexity
+    pass
+
+
+# Wallet Recon Source Selection (v1) - Covalent primary, Bitquery fallback
 def fetch_wallet_activity_bitquery(address: str, chain: str = "base", since_ts: int = 0) -> Dict[str, Any]:
     """
-    Fetch wallet activity using Bitquery adapter.
-    Supports both mock (default) and live modes via BITQUERY_LIVE environment variable.
+    Fetch wallet activity using selected source (Covalent primary, Bitquery fallback).
+    Supports source selection via WALLET_RECON_SOURCE environment variable.
 
     Args:
         address: Wallet address to fetch activity for
@@ -291,44 +305,86 @@ def fetch_wallet_activity_bitquery(address: str, chain: str = "base", since_ts: 
     Returns:
         Dict with standardized format containing events and metadata
     """
-    # Check if live mode is enabled
+    # Check source selection
+    source = os.getenv("WALLET_RECON_SOURCE", "covalent").lower()
     use_live = os.getenv("BITQUERY_LIVE", "0").lower() in ("1", "true", "yes")
 
     # Debug logging
     verbose = os.getenv("BITQUERY_VERBOSE", "0").lower() in ("1", "true", "yes")
     if verbose:
-        print(f"    🔍 Bitquery fetch: address={address[:10]}..., chain={chain}, use_live={use_live}")
+        print(f"    🔍 Wallet recon: address={address[:10]}..., chain={chain}, source={source}, use_live={use_live}")
 
-    if use_live:
-        # Use live Bitquery API
+    # Use mock if explicitly requested
+    if source == "mock":
+        print("    🟡 Using MOCK wallet activity API (explicit request)")
+        return _fetch_wallet_activity_bitquery_mock(address, chain, since_ts)
+
+    # Try Covalent first (if selected and available)
+    if source == "covalent":
         try:
-            from real_apis.bitquery import fetch_wallet_activity_bitquery_live
-            print("    🔴 Using LIVE Bitquery API")
-            # Create a new event loop in a separate thread to avoid nested event loop issues
+            from real_apis.covalent import fetch_wallet_activity_covalent_live
+            print("    🔵 Using LIVE Covalent API")
+
+            # For now, skip cursor management to avoid async complexity
+            cursor = None
+
+            # Create a new event loop in a separate thread
             import concurrent.futures
 
-            def run_in_thread():
-                """Run the async function in a new event loop."""
+            def run_covalent_in_thread():
+                """Run the Covalent async function in a new event loop."""
                 try:
                     new_loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(new_loop)
-                    return new_loop.run_until_complete(fetch_wallet_activity_bitquery_live(address, chain, since_ts))
+                    result = new_loop.run_until_complete(fetch_wallet_activity_covalent_live(address, "8453", cursor))
+                    # TODO: Implement cursor management
+                    return result
                 finally:
                     new_loop.close()
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(run_in_thread)
-                result = future.result(timeout=120)  # 2 minute timeout for the entire operation
+                future = executor.submit(run_covalent_in_thread)
+                result = future.result(timeout=120)  # 2 minute timeout
                 return result
 
         except concurrent.futures.TimeoutError:
-            print("    ❌ Live Bitquery timed out after 2 minutes, falling back to mock")
+            print("    ❌ Covalent timed out after 2 minutes, falling back to Bitquery")
         except Exception as e:
-            print(f"    ❌ Live Bitquery failed: {e}, falling back to mock")
-            # Fall through to mock implementation
+            print(f"    ❌ Covalent failed: {e}, falling back to Bitquery")
+            # Fall through to Bitquery
 
-    # Use mock implementation (default)
-    print("    🟡 Using MOCK Bitquery API (default)")
+    # Try Bitquery (fallback or primary if selected)
+    if source in ["bitquery", "covalent"]:  # Covalent falls back to Bitquery
+        if use_live:
+            try:
+                from real_apis.bitquery import fetch_wallet_activity_bitquery_live
+                print("    🔴 Using LIVE Bitquery API")
+
+                # Create a new event loop in a separate thread
+                import concurrent.futures
+
+                def run_bitquery_in_thread():
+                    """Run the Bitquery async function in a new event loop."""
+                    try:
+                        new_loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(new_loop)
+                        return new_loop.run_until_complete(fetch_wallet_activity_bitquery_live(address, chain, since_ts))
+                    finally:
+                        new_loop.close()
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(run_bitquery_in_thread)
+                    result = future.result(timeout=120)  # 2 minute timeout
+                    return result
+
+            except concurrent.futures.TimeoutError:
+                print("    ❌ Live Bitquery timed out after 2 minutes, falling back to mock")
+            except Exception as e:
+                print(f"    ❌ Live Bitquery failed: {e}, falling back to mock")
+                # Fall through to mock implementation
+
+    # Use mock implementation (final fallback)
+    print("    🟡 Using MOCK wallet activity API (fallback)")
     return _fetch_wallet_activity_bitquery_mock(address, chain, since_ts)
 
 
@@ -399,8 +455,12 @@ def _fetch_wallet_activity_bitquery_mock(address: str, chain: str = "base", sinc
         mock_events.append(event)
 
     return {
-        "provider": "bitquery",
-        "next_cursor": None,  # Bitquery uses timestamps, not cursors
+        "provider": {
+            "name": "bitquery",
+            "chain": chain,
+            "endpoint": "mock",
+            "cursor": None
+        },
         "events": mock_events,
         "metadata": {
             "address": address,

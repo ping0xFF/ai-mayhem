@@ -79,7 +79,15 @@ async def brief_node(state: Dict[str, Any]) -> Dict[str, Any]:
     selected_action = state.get("selected_action")
     wallet_signals = {k: v for k, v in signals.items() if k.startswith(('net_lp_usd', 'new_pools_touched'))}
     if selected_action == "wallet_recon" and wallet_signals:
-        brief_text += f"Wallet recon: net LP USD ${wallet_signals.get('net_lp_usd_24h', 0):.2f}, "
+        # Determine source from raw data
+        raw_data = state.get("raw_data", {})
+        provider_info = raw_data.get("provider", {})
+        if isinstance(provider_info, dict):
+            source_name = provider_info.get("name", "unknown")
+        else:
+            source_name = "bitquery"  # Legacy format
+
+        brief_text += f"Wallet recon via {source_name}: net LP USD ${wallet_signals.get('net_lp_usd_24h', 0):.2f}, "
         new_pools = wallet_signals.get('new_pools_touched_24h', [])
         brief_text += f"new pools touched {len(new_pools)}. "
     

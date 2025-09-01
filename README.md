@@ -9,10 +9,12 @@ This project implements a **controlled autonomy** system that augments the exist
 ### Key Features
 
 - **Controlled Autonomy**: Planner selects actions based on cursor staleness and budget
+- **Multi-Source API Integration**: Covalent (primary) + Bitquery (fallback) for wallet recon
 - **Flexible JSON Storage**: SQLite-based persistence for arbitrary API responses
 - **Per-Node Timing**: Execution time tracking for performance monitoring
 - **Idempotent Operations**: No duplicate data on re-runs
 - **Budget Awareness**: Cost tracking and limits
+- **Graceful API Fallback**: Automatic degradation from live APIs to mock data
 - **Mock Data Support**: Development-friendly with deterministic test data
 
 ## 🏗️ Architecture
@@ -45,6 +47,10 @@ ai-mayhem/
 ├── cli.py                   # Command-line interface
 ├── requirements.txt         # Python dependencies
 ├── config.yaml              # LiteLLM configuration
+├── real_apis/               # Real API integrations (Covalent, Bitquery)
+│   ├── __init__.py         # API package exports
+│   ├── covalent.py         # Covalent API client for wallet activity
+│   └── bitquery.py         # Bitquery API client for blockchain data
 ├── nodes/                   # Professional node organization
 │   ├── __init__.py         # Node package exports
 │   ├── config.py           # Shared configuration constants
@@ -55,6 +61,8 @@ ai-mayhem/
 │   └── memory.py           # Memory node - cursor updates & artifact persistence
 ├── demos/                   # Comprehensive demo suite
 │   ├── lp_e2e_demo.py      # Complete LP monitoring end-to-end demo
+│   ├── covalent_demo.py    # Covalent wallet recon integration demo
+│   ├── wallet_recon_live.py    # Live wallet recon with Bitquery/Covalent
 │   ├── quick_verification.py   # Quick verification without hanging
 │   └── three_layer_demo.py     # Three-layer data model demonstration
 ├── tests/                   # Comprehensive test suite
@@ -95,11 +103,18 @@ Create `.env` file:
 # Budget settings
 BUDGET_DAILY=5.0
 
-# Bitquery API (for live wallet activity)
+# Wallet Recon Configuration
+# Covalent API (primary source - higher-level wallet data)
+# Get your API key from: https://www.covalenthq.com/
+COVALENT_API_KEY=your_covalent_api_key_here
+
+# Bitquery API (fallback source - more detailed transaction data)
 # Get your API key from: https://streaming.bitquery.io/
-# You'll need to set up billing to use the API
-BITQUERY_API_KEY=your_api_key_here
-BITQUERY_LIVE=0  # Set to 1 for live API, 0 for mock
+BITQUERY_API_KEY=your_bitquery_api_key_here
+
+# Source Selection
+WALLET_RECON_SOURCE=covalent  # Options: covalent, bitquery
+BITQUERY_LIVE=0              # Set to 1 for live Bitquery API
 
 # Optional: Enable verbose logging for debugging
 BITQUERY_VERBOSE=1
@@ -130,6 +145,10 @@ python tests/run_all_tests.py           # 🏆 RECOMMENDED: Run ALL tests
 python tests/test_enhanced_lp.py        # LP functionality tests
 python tests/test_lp_brief_gating.py    # LP brief gating tests
 python tests/test_planner_worker.py     # Core Planner/Worker node tests
+
+# Wallet Recon demos
+python demos/covalent_demo.py           # 🆕 Covalent wallet recon demo
+python demos/wallet_recon_live.py       # Live wallet recon (Bitquery/Covalent)
 ```
 
 ## 📊 Core Files Explained
@@ -169,12 +188,31 @@ python tests/test_planner_worker.py     # Core Planner/Worker node tests
 - **Audit Logging**: Tracks all database operations
 - **LLM Usage Tracking**: Cost tracking for budget management
 
-### `mock_tools.py` - Development Tools
-- **fetch_wallet_activity()**: Mock wallet activity queries
+### `mock_tools.py` - Enhanced Development Tools
+- **fetch_wallet_activity()**: Unified wallet activity with Covalent/Bitquery source selection
 - **fetch_lp_activity()**: Mock LP activity queries
 - **web_metrics_lookup()**: Mock market metrics queries
+- **Source Selection**: `WALLET_RECON_SOURCE=covalent|bitquery` environment variable
+- **Graceful Fallback**: Covalent → Bitquery → Mock (automatic degradation)
+- **Cursor Management**: Built-in cursor handling for pagination
 - **Deterministic Data**: Uses fixtures from test files
 - **Network Simulation**: Realistic delays and provenance tracking
+
+### `real_apis/` Directory - Production API Integrations
+**Prevents development/production drift by isolating real API implementations:**
+
+- **`real_apis/__init__.py`**: Package exports for all API integrations
+- **`real_apis/covalent.py`**: Covalent API client with async HTTPX, pagination, and error handling
+  - Base chain optimized (`/address/{addr}/transactions_v3/` endpoint)
+  - Cursor-based pagination with retry logic and rate limiting
+  - Graceful error handling for 401/402/404 status codes
+  - Event normalization with provenance tracking
+- **`real_apis/bitquery.py`**: Bitquery GraphQL client for detailed blockchain data
+  - GraphQL queries for transfers and DEX trades
+  - Offset-based pagination with deduplication
+  - Comprehensive error handling and logging
+
+**Swap Pattern**: Replace `from mock_tools import fetch_wallet_activity` with `from real_apis.covalent import fetch_wallet_activity_covalent_live` for production use.
 
 ## 🔧 Configuration
 
@@ -243,14 +281,17 @@ python demos/lp_e2e_demo.py
 ```
 
 ### Expected Test Results
-- **`run_all_tests.py`**: Should run all 7 test files and report 5/7 passing (catches broken tests!)
+- **`run_all_tests.py`**: Should run all 7 test files and report 7/7 passing (all tests working!)
 - **`lp_e2e_demo.py`**: Complete LP monitoring flow with 5 events, signals, and provenance
 - **`quick_verification.py`**: Should complete all tests without hanging
+- **`covalent_demo.py`**: Should demonstrate Covalent API integration with 31+ transactions
 - **`test_enhanced_lp.py`**: 7 tests should pass (LP tools, worker saves, normalization, signals, idempotency)
 - **`test_lp_brief_gating.py`**: 7 tests should pass (LP gating, artifact persistence, provenance, thresholds)
 - **`test_planner_worker.py`**: 4 tests should pass (planner selection, worker saves, analyze rollup, brief gating)
 - **`test_three_layer_data_model.py`**: 7 tests should pass (all three layers, provenance, idempotency)
 - **`test_json_storage.py`**: 12 tests should pass (upsert, query, delete, validation, etc.)
+- **`test_agent.py`**: All async node tests should pass
+- **`test_live.py`**: Live integration tests should pass
 - **`three_layer_demo.py`**: Should show complete flow with provenance chain
 - **Import test**: Should show "✅ All nodes imported successfully"
 - **Old file test**: Should show "✅ Old file properly removed"
@@ -333,21 +374,37 @@ Artifacts.source_ids → Events.event_id → Scratch.id
 
 ### Adding Real API Integration
 
-1. **Replace Mock Tools**:
-```python
-# In nodes/worker.py, change:
-from mock_tools import fetch_wallet_activity, fetch_lp_activity, web_metrics_lookup
-# To:
-from real_apis import fetch_wallet_activity, fetch_lp_activity, web_metrics_lookup
-```
-
-2. **Add API Keys** to `.env`:
+1. **Configure Source Selection** in `.env`:
 ```bash
-NANSEN_API_KEY=your_key
-ETHERSCAN_API_KEY=your_key
+# Primary source (Covalent recommended for wallet activity)
+WALLET_RECON_SOURCE=covalent
+COVALENT_API_KEY=your_covalent_key
+
+# Fallback source
+BITQUERY_API_KEY=your_bitquery_key
+BITQUERY_LIVE=1  # Enable live Bitquery API
 ```
 
-3. **Implement Real Tools** with same interface as mock tools
+2. **Replace Mock Tools** (Automatic Fallback):
+```python
+# No code changes needed! The system automatically:
+# 1. Tries Covalent first (if configured)
+# 2. Falls back to Bitquery (if configured)
+# 3. Uses mock data (development default)
+
+# For custom integrations, use:
+from real_apis.covalent import fetch_wallet_activity_covalent_live
+from real_apis.bitquery import fetch_wallet_activity_bitquery_live
+```
+
+3. **Test Integration**:
+```bash
+# Test Covalent integration
+python demos/covalent_demo.py
+
+# Test with live APIs
+python demos/wallet_recon_live.py
+```
 
 ### Adding New Actions
 
@@ -373,9 +430,10 @@ ETHERSCAN_API_KEY=your_key
 ## 🎯 Use Cases
 
 ### Blockchain Monitoring
-- **Wallet Activity**: Track specific wallet transactions
+- **Wallet Activity**: Track specific wallet transactions with Covalent/Bitquery
 - **LP Activity**: Monitor liquidity provider movements
 - **Market Metrics**: Analyze DEX volume and pool activity
+- **Multi-Source Recon**: Automatic fallback between API providers
 
 ### Data Analysis
 - **Event Rollups**: 24h event counts and top pools
@@ -475,15 +533,22 @@ python demos/wallet_recon_live.py       # Live wallet activity demo
 # LP-specific test suites
 python tests/test_enhanced_lp.py        # Core LP functionality
 python tests/test_lp_brief_gating.py    # LP brief gating logic
+
+# Wallet Recon demos
+python demos/covalent_demo.py           # 🆕 Covalent wallet recon demo
+python demos/wallet_recon_live.py       # Live wallet recon (Bitquery/Covalent)
 ```
 
-#### 🔴 Live Bitquery Integration
-- **Environment**: Set `BITQUERY_LIVE=1` and `BITQUERY_ACCESS_TOKEN` (or `BITQUERY_API_KEY`) for live data
-- **Authentication**: Uses Bearer token authentication with your access token
-- **Fallback**: Automatically falls back to mock data if access token missing
-- **Raw-First**: Preserves complete Bitquery response with full provenance
+#### 🔴 Live Wallet Recon Integration
+- **Primary Source**: Covalent API for high-level wallet transaction data
+- **Fallback Source**: Bitquery API for detailed transaction analysis
+- **Source Selection**: Set `WALLET_RECON_SOURCE=covalent|bitquery`
+- **Authentication**: Covalent uses X-API-KEY, Bitquery uses Bearer token
+- **Fallback**: Automatically falls back to mock data if API keys missing
+- **Raw-First**: Preserves complete API responses with full provenance
+- **Pagination**: Covalent uses cursor-based, Bitquery uses offset-based
 - **Rate Limiting**: Built-in retry logic with exponential backoff
-- **Pagination**: Handles large result sets with offset-based pagination
+- **Demo**: `covalent_demo.py` shows live integration with 31+ transactions
 
 ## 🤖 Built with grok-code-fast-1
 
@@ -503,4 +568,4 @@ The model demonstrated exceptional capability in:
 
 ---
 
-**Note**: This project uses mock data by default for development. Replace `mock_tools.py` imports with real API implementations for production use.
+**Note**: This project uses mock data by default for development. Configure `WALLET_RECON_SOURCE=covalent` and add API keys to `.env` for production use. The system automatically handles API fallback and maintains the same interface.

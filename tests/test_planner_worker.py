@@ -208,7 +208,9 @@ class TestPlannerWorker(unittest.IsolatedAsyncioTestCase):
 
         # Ensure we use mock data for this test
         original_live = os.environ.get("BITQUERY_LIVE", "0")
+        original_source = os.environ.get("WALLET_RECON_SOURCE", "covalent")
         os.environ["BITQUERY_LIVE"] = "0"
+        os.environ["WALLET_RECON_SOURCE"] = "mock"
 
         try:
             # Test wallet activity fetch
@@ -227,30 +229,36 @@ class TestPlannerWorker(unittest.IsolatedAsyncioTestCase):
             for event in result["events"]:
                 self.assertIn("provenance", event)
                 self.assertEqual(event["provenance"]["source"], "mock")
+
+            # Test idempotency - run again with same state (still in mock mode)
+            result2 = await worker_node(state)
+
+            # Should return same events (no duplicates)
+            self.assertEqual(len(result["events"]), len(result2["events"]))
+
+            # Verify deterministic IDs were used
+            # Handle both old format (txHash/logIndex) and new Bitquery format (tx)
+            if 'txHash' in result["events"][0]:
+                # Old format
+                event_ids = [f"{event['txHash']}:{event['logIndex']}" for event in result["events"]]
+                event_ids2 = [f"{event['txHash']}:{event['logIndex']}" for event in result2["events"]]
+            else:
+                # New Bitquery format
+                event_ids = [event['tx'] for event in result["events"]]
+                event_ids2 = [event['tx'] for event in result2["events"]]
+
+            self.assertEqual(event_ids, event_ids2)
         finally:
             # Restore original environment
             if original_live:
                 os.environ["BITQUERY_LIVE"] = original_live
             elif "BITQUERY_LIVE" in os.environ:
                 del os.environ["BITQUERY_LIVE"]
-        
-        # Test idempotency - run again with same state
-        result2 = await worker_node(state)
-        
-        # Should return same events (no duplicates)
-        self.assertEqual(len(result["events"]), len(result2["events"]))
-        
-        # Verify deterministic IDs were used
-        # Handle both old format (txHash/logIndex) and new Bitquery format (tx)
-        if 'txHash' in result["events"][0]:
-            # Old format
-            event_ids = [f"{event['txHash']}:{event['logIndex']}" for event in result["events"]]
-            event_ids2 = [f"{event['txHash']}:{event['logIndex']}" for event in result2["events"]]
-        else:
-            # New Bitquery format
-            event_ids = [event['tx'] for event in result["events"]]
-            event_ids2 = [event['tx'] for event in result2["events"]]
-        self.assertEqual(event_ids, event_ids2)
+
+            if original_source:
+                os.environ["WALLET_RECON_SOURCE"] = original_source
+            elif "WALLET_RECON_SOURCE" in os.environ:
+                del os.environ["WALLET_RECON_SOURCE"]
     
     async def test_analyze_last24h_rollup_counts_and_top_pools(self):
         """Test analyze rollup correctness on small fixture."""

@@ -39,27 +39,37 @@ async def worker_node(state: Dict[str, Any]) -> Dict[str, Any]:
             cursor_key = f"wallet:{wallet}"
             since_ts = state.get("cursors", {}).get(cursor_key, 0)
 
-            # Fetch wallet activity using Bitquery adapter
+            # Fetch wallet activity using selected adapter (Covalent primary, Bitquery fallback)
             response = fetch_wallet_activity_bitquery(wallet, "base", since_ts)
 
+            # Determine provider and create appropriate raw_id
+            provider_info = response.get("provider", {})
+            if isinstance(provider_info, dict):
+                provider_name = provider_info.get("name", "unknown")
+                chain = provider_info.get("chain", "base")
+            else:
+                provider_name = "bitquery"  # Legacy format
+                chain = "base"
+
+            raw_id = f"{provider_name}_wallet_{wallet}_{int(datetime.now().timestamp())}"
+
             # Save raw data to Layer 1 (raw-first approach)
-            raw_id = f"bitquery_wallet_{wallet}_{since_ts}_{int(datetime.now().timestamp())}"
             await save_raw_response(raw_id, "wallet_activity", response, provenance={
-                "source": "bitquery",
+                "source": provider_name,
                 "address": wallet,
-                "chain": "base",
+                "chain": chain,
                 "since_ts": since_ts,
                 "snapshot_time": int(datetime.now().timestamp()),
-                "provider": "bitquery"
+                "provider": provider_name
             })
 
             # Extract events from response (keep raw structure)
             events = response.get("events", [])
             raw_data = {
                 "wallet": wallet,
-                "provider": response.get("provider"),
+                "provider": provider_info,
                 "event_count": len(events),
-                "next_cursor": response.get("next_cursor")
+                "next_cursor": response.get("metadata", {}).get("next_cursor") or response.get("next_cursor")
             }
             source_ids.append(raw_id)
 
