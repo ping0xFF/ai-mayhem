@@ -55,13 +55,12 @@ ai-mayhem/
 │   └── memory.py           # Memory node - cursor updates & artifact persistence
 ├── demos/                   # Comprehensive demo suite
 │   ├── lp_e2e_demo.py      # Complete LP monitoring end-to-end demo
-│   ├── planner_worker_demo.py  # Planner/Worker integration demo
 │   ├── quick_verification.py   # Quick verification without hanging
 │   └── three_layer_demo.py     # Three-layer data model demonstration
 ├── tests/                   # Comprehensive test suite
 │   ├── test_enhanced_lp.py     # Enhanced LP functionality tests
 │   ├── test_lp_brief_gating.py # LP brief gating tests
-│   ├── test_planner_worker.py  # TDD tests for Planner/Worker
+│   ├── test_planner_worker.py  # TDD tests for Planner/Worker nodes
 │   ├── test_three_layer_data_model.py  # Three-layer data model tests
 │   ├── test_json_storage.py    # JSON storage tests
 │   ├── test_agent.py           # Main agent tests
@@ -115,12 +114,13 @@ python demos/lp_e2e_demo.py
 python demos/quick_verification.py
 
 # Original Planner/Worker demo
-python demos/planner_worker_demo.py
+python demos/lp_e2e_demo.py
 
 # Run comprehensive test suite
+python tests/run_all_tests.py           # 🏆 RECOMMENDED: Run ALL tests
 python tests/test_enhanced_lp.py        # LP functionality tests
 python tests/test_lp_brief_gating.py    # LP brief gating tests
-python tests/test_planner_worker.py     # Core Planner/Worker tests
+python tests/test_planner_worker.py     # Core Planner/Worker node tests
 ```
 
 ## 📊 Core Files Explained
@@ -205,32 +205,36 @@ MEMORY_TIMEOUT = 10    # seconds
 **"Trust but verify" - Run these to confirm everything works:**
 
 ```bash
-# 1. Quick verification (recommended - no hanging issues)
+# 1. 🏆 Comprehensive test suite (catches broken tests!)
+python tests/run_all_tests.py
+
+# 2. Quick verification (recommended - no hanging issues)
 python demos/quick_verification.py
 
-# 2. Test the new nodes structure
+# 3. Test the new nodes structure
 python tests/test_planner_worker.py
 
-# 3. Test three-layer data model
+# 4. Test three-layer data model
 python tests/test_three_layer_data_model.py
 
-# 4. Test JSON storage functionality  
+# 5. Test JSON storage functionality
 python tests/test_json_storage.py
 
-# 5. Demo three-layer data model
+# 6. Demo three-layer data model
 python demos/three_layer_demo.py
 
-# 6. Verify imports work correctly
+# 7. Verify imports work correctly
 python -c "from nodes import planner_node, worker_node, analyze_node, brief_node, memory_node; print('✅ All nodes imported successfully')"
 
-# 7. Check that old planner_worker.py is gone (should fail)
+# 8. Check that old planner_worker.py is gone (should fail)
 python -c "import planner_worker" 2>/dev/null && echo "❌ Old file still exists" || echo "✅ Old file properly removed"
 
-# 8. Full demo (may hang - use Ctrl+C if needed)
-python demos/planner_worker_demo.py
+# 9. Full demo (may hang - use Ctrl+C if needed)
+python demos/lp_e2e_demo.py
 ```
 
 ### Expected Test Results
+- **`run_all_tests.py`**: Should run all 7 test files and report 5/7 passing (catches broken tests!)
 - **`lp_e2e_demo.py`**: Complete LP monitoring flow with 5 events, signals, and provenance
 - **`quick_verification.py`**: Should complete all tests without hanging
 - **`test_enhanced_lp.py`**: 7 tests should pass (LP tools, worker saves, normalization, signals, idempotency)
@@ -242,6 +246,16 @@ python demos/planner_worker_demo.py
 - **Import test**: Should show "✅ All nodes imported successfully"
 - **Old file test**: Should show "✅ Old file properly removed"
 - **Full demo**: May hang after completion (use Ctrl+C if needed)
+
+### Comprehensive Test Runner
+The `tests/run_all_tests.py` script automatically runs all test files in the correct dependency order and provides:
+- ✅ Detailed pass/fail reporting
+- ✅ Import error detection (catches broken tests like `test_agent.py`)
+- ✅ Execution time tracking
+- ✅ Clear recommendations for fixing failed tests
+- ✅ CI/CD compatible exit codes
+
+**Always run this first** to catch test suite issues before committing!
 
 ### Test Coverage
 - **LP Tools**: Enhanced mock tools with simple/realistic fixtures
@@ -287,13 +301,32 @@ Brief → Normalized Events → Raw Responses
 - **Audit trail**: Complete history of data transformations
 - **Debugging**: Easy to trace issues back to original API responses
 
+### Data Flow Diagram
+```
+[ Layer 1: Scratch JSON Cache ]            (short-lived, 7d)
+  id (pk) ── source ── timestamp ── raw_json ── provenance
+      │
+      │  (normalize)
+      ▼
+[ Layer 2: Normalized Events ]             (30d)
+  event_id (pk) ─ wallet ─ event_type ─ pool ─ value ─ ts ─ source_id ─ chain
+      │
+      │  (aggregate + compute signals)
+      ▼
+[ Layer 3: Artifacts / Briefs ]            (90d)
+  artifact_id (pk) ─ ts ─ summary_text ─ signals ─ next_watchlist ─ source_ids ─ event_count
+
+Provenance chain:
+Artifacts.source_ids → Events.event_id → Scratch.id
+```
+
 ## 🔄 Integration Points
 
 ### Adding Real API Integration
 
 1. **Replace Mock Tools**:
 ```python
-# In planner_worker.py, change:
+# In nodes/worker.py, change:
 from mock_tools import fetch_wallet_activity, fetch_lp_activity, web_metrics_lookup
 # To:
 from real_apis import fetch_wallet_activity, fetch_lp_activity, web_metrics_lookup
@@ -396,7 +429,7 @@ ETHERSCAN_API_KEY=your_key
 ```bash
 # Enable debug logging
 export DEBUG=1
-python demos/planner_worker_demo.py
+python demos/lp_e2e_demo.py
 ```
 
 ### Database Inspection
