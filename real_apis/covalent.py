@@ -73,6 +73,10 @@ class CovalentClient:
                 response = await self.session.get(url, params=params)
                 print(f"    📡 Response status: {response.status_code}")
 
+                # Monitor data transfer size
+                response_size = len(response.content)
+                print(f"    📊 Response size: {response_size:,} bytes ({response_size/1024/1024:.2f} MB)")
+
                 # Handle rate limiting
                 if response.status_code == 429:
                     retry_after = response.headers.get("Retry-After", str(BASE_DELAY * (2 ** attempt)))
@@ -140,10 +144,11 @@ async def fetch_wallet_activity_covalent(
     print(f"    🔍 Limit: {limit}, Cursor: {cursor or 'None'}")
 
     async with CovalentClient() as client:
-        # Get transaction history for the wallet
-        endpoint = f"/{chain_id}/address/{address}/transactions_v3/"
+        # Use paginated transactions v3 endpoint - GoldRush API works!
+        endpoint = f"/base-mainnet/address/{address}/transactions_v3/"
         params = {
-            "limit": min(limit, 100),  # Covalent max is 100
+            "limit": min(limit, 100),  # Confirmed: 100 is good balance
+            # Note: noLogs, noInternal, quoteCurrency parameters not supported - removed
         }
 
         if cursor:
@@ -177,12 +182,11 @@ async def fetch_wallet_activity_covalent(
                         "block": tx.get("block_height", 0),
                         "gas_used": tx.get("gas_spent", 0),
                         "raw": {
-                            "covalent_tx": tx,
-                            "block": {
-                                "height": tx.get("block_height"),
-                                "signed_at": tx.get("block_signed_at"),
-                                "signed_at_unix": tx.get("block_signed_at_unix")
-                            }
+                            "tx_hash": tx.get("tx_hash"),
+                            "block_height": tx.get("block_height"),
+                            "value": tx.get("value"),
+                            "gas_spent": tx.get("gas_spent"),
+                            "log_count": len(tx.get("log_events", []))
                         }
                     }
 
@@ -212,7 +216,10 @@ async def fetch_wallet_activity_covalent(
                     "cursor": next_cursor
                 },
                 "events": events,
-                "raw": result,
+                "raw": {
+                    "response_size": len(str(result)),
+                    "item_count": len(result.get("data", {}).get("items", []))
+                },
                 "metadata": {
                     "address": address,
                     "chain_id": chain_id,

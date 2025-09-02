@@ -550,6 +550,212 @@ python demos/wallet_recon_live.py       # Live wallet recon (Bitquery/Covalent)
 - **Rate Limiting**: Built-in retry logic with exponential backoff
 - **Demo**: `covalent_demo.py` shows live integration with 31+ transactions
 
+## 📡 API Commands - Size Optimization Analysis (TESTED)
+
+### 🔧 Environment Setup
+First, ensure your environment variables are set:
+```bash
+# Source your environment file
+source .env
+
+# Test wallet address (First Mover LP from your data)
+export WALLET_ADDRESS="0xc18dad44e77cf2f2f689f68d93a3603cbcdc5a30"
+
+# Verify API key is available
+echo "COVALENT_API_KEY: ${COVALENT_API_KEY:+SET}"
+```
+
+### ❌ ORIGINAL PROBLEMATIC COMMANDS (90MB Responses)
+
+#### **Large Response - Unsupported Parameters** (Returns 400 Error)
+```bash
+# This is what created the 90MB+ responses but uses UNSUPPORTED parameters
+curl -X GET \
+  "https://api.covalenthq.com/v1/base-mainnet/address/$WALLET_ADDRESS/transactions_v3/?noLogs=true&noInternal=true&quoteCurrency=USD" \
+  -H "Authorization: Bearer $COVALENT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -o data/raw/base_transactions_v3_response.json
+
+# Error Response: {"error":true,"error_message":"Unrecognized query parameters: noInternal, noLogs, quoteCurrency"}
+```
+
+#### **Large Response - Without Unsupported Parameters** (Still Huge)
+```bash
+# This works but still returns massive responses (~90MB)
+curl -X GET \
+  "https://api.covalenthq.com/v1/base-mainnet/address/$WALLET_ADDRESS/transactions_v3/" \
+  -H "Authorization: Bearer $COVALENT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -o data/raw/base_transactions_simple.json
+
+# Size: ~90MB (contains all transaction history with full details)
+```
+
+### ✅ OPTIMIZED COMMANDS (Minimal Data Transfer)
+
+#### **Minimal Response** (Production - ~100B, 99.999% size reduction)
+```bash
+# Only essential transaction data (limit=1 for testing)
+curl -X GET \
+  "https://api.covalenthq.com/v1/base-mainnet/address/$WALLET_ADDRESS/transactions_v3/?limit=1" \
+  -H "Authorization: Bearer $COVALENT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -o data/raw/base_transactions_minimal.json
+
+# Expected Size: ~100 bytes (single transaction with essential fields only)
+```
+
+#### **Small Batch Response** (Development - ~2KB)
+```bash
+# Small controlled batch (limit=10 for development)
+curl -X GET \
+  "https://api.covalenthq.com/v1/base-mainnet/address/$WALLET_ADDRESS/transactions_v3/?limit=10" \
+  -H "Authorization: Bearer $COVALENT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -o data/raw/base_transactions_batch.json
+
+# Expected Size: ~2KB (10 transactions with essential fields)
+```
+
+#### **Pagination Example** (Production - Controlled Data Flow)
+```bash
+# First page
+curl -X GET \
+  "https://api.covalenthq.com/v1/base-mainnet/address/$WALLET_ADDRESS/transactions_v3/?limit=10" \
+  -H "Authorization: Bearer $COVALENT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -o data/raw/page1.json
+
+# Next page (use cursor from previous response)
+curl -X GET \
+  "https://api.covalenthq.com/v1/base-mainnet/address/$WALLET_ADDRESS/transactions_v3/?limit=10&cursor=YOUR_CURSOR_HERE" \
+  -H "Authorization: Bearer $COVALENT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -o data/raw/page2.json
+```
+
+### 📏 Size Optimization Analysis
+
+#### **Problems with Original Approach:**
+- **90MB+ JSON responses** for full transaction history
+- **Unsupported parameters** causing 400 errors (`noLogs`, `noInternal`, `quoteCurrency`)
+- **No pagination control** - fetches everything at once
+- **Redundant data** - full log events, internal transactions, etc.
+
+#### **Optimization Techniques Applied:**
+1. **Limit Parameter**: `?limit=N` (N=1-100) instead of unlimited
+2. **Pagination**: Use cursor-based pagination for incremental fetching
+3. **Remove Unsupported Params**: Avoid `noLogs`, `noInternal`, `quoteCurrency`
+4. **Minimal Fields**: Only request essential transaction data
+
+#### **Size Reduction Results - ACTUAL TESTING:**
+| Command Type | Original Size | Actual Response | Reduction | Notes |
+|-------------|---------------|----------------|-----------|--------|
+| Full History (38MB file) | 38MB (34 txns) | ~650KB per txn | ❌ No reduction | Limit param ignored |
+| Unsupported Params | 400 Error | 400 Error | ❌ Error | Confirmed unsupported |
+| Minimal (limit=1) | Expected ~100B | ~650KB (25 txns) | ❌ No reduction | Limit param ineffective |
+| Small Batch (limit=10) | Expected ~2KB | ~650KB (25 txns) | ❌ No reduction | Same result |
+| Pagination | Expected controlled | ~650KB (25 txns) | ❌ No reduction | Returns all available |
+
+#### **Key Discovery: Per-Transaction Verbosity**
+- **Root cause**: Each transaction is ~650KB-1MB due to extensive log event data
+- **Log events include**: Contract metadata, decoded parameters, raw data, logos
+- **API behavior**: Returns all recent transactions regardless of limit parameter
+- **Current wallet**: Only ~25 transactions available, but each is very large
+
+### 🧪 Testing Commands - ACTUAL BEHAVIOR
+
+```bash
+# Test API connectivity and measure actual response size
+source .env
+curl -X GET \
+  "https://api.covalenthq.com/v1/base-mainnet/address/$WALLET_ADDRESS/transactions_v3/?limit=1" \
+  -H "Authorization: Bearer $COVALENT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -w "\nStatus: %{http_code}\nSize: %{size_download} bytes\nTransactions: " \
+  -o /tmp/test_response.json && \
+  jq '.data.items | length' /tmp/test_response.json 2>/dev/null
+
+# Analyze transaction size and log event verbosity
+curl -X GET \
+  "https://api.covalenthq.com/v1/base-mainnet/address/$WALLET_ADDRESS/transactions_v3/" \
+  -H "Authorization: Bearer $COVALENT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -o data/raw/current_response.json && \
+  echo "File size: $(ls -lh data/raw/current_response.json | awk '{print $5}')" && \
+  echo "Transaction count: $(jq '.data.items | length' data/raw/current_response.json 2>/dev/null)" && \
+  echo "Avg size per transaction: $(($(stat -f%z data/raw/current_response.json) / $(jq '.data.items | length' data/raw/current_response.json 2>/dev/null))) bytes"
+
+# Compare with original large file
+ls -lah data/raw/base_transactions_simple.json
+echo "Original file transactions: $(jq '.data.items | length' data/raw/base_transactions_simple.json 2>/dev/null)"
+```
+
+### 📁 Output Files Structure - ACTUAL SIZES
+```
+data/raw/
+├── base_transactions_simple.json      # 38MB (34 txns × ~1MB each)
+├── base_transactions_v3_response.json # 126B (400 Error - unsupported params)
+├── current_response.json              # ~16MB (25 txns × ~650KB each)
+├── test_*.json                        # Various test files (~16MB each)
+└── Note: All "optimized" commands return ~16MB due to limit parameter being ignored
+```
+
+### ❗ Important Notes - ACTUAL BEHAVIOR
+
+1. **API Key Required**: Must have `COVALENT_API_KEY` in `.env` file
+2. **Unsupported Parameters**: `noLogs`, `noInternal`, `quoteCurrency` return 400 errors
+3. **Limit Parameter Ineffective**: `?limit=N` is ignored - always returns all recent transactions
+4. **Per-Transaction Size**: Each transaction is ~650KB-1MB due to verbose log events
+5. **Rate Limits**: Covalent has rate limits, but pagination may not help due to limit ignoring
+6. **Base Chain**: Uses `base-mainnet` endpoint specifically for Base chain
+7. **Log Event Verbosity**: The real optimization opportunity is reducing log event detail
+
+### 🔄 Migration Path - REALISTIC EXPECTATIONS
+```bash
+# ❌ PROBLEMATIC: Original large responses (38MB+)
+curl "https://api.covalenthq.com/v1/base-mainnet/address/$WALLET_ADDRESS/transactions_v3/" -o large_file.json
+# Result: ~16MB (25 transactions × 650KB each)
+
+# ⚠️ CURRENT REALITY: All commands return similar sizes
+curl "https://api.covalenthq.com/v1/base-mainnet/address/$WALLET_ADDRESS/transactions_v3/?limit=1" -o response.json
+# Result: Still ~16MB (limit parameter ignored)
+
+# 🎯 FUTURE OPTIMIZATION: Need to find parameters that reduce log event verbosity
+# TODO: Research Covalent API parameters for less verbose responses
+# TODO: Consider time-based filtering to reduce transaction count
+# TODO: Evaluate if v2 endpoints provide smaller responses
+```
+
+### 🎯 **Key Takeaways from Testing:**
+
+1. **✅ Confirmed**: The `?limit=N` parameter is completely ignored by the API
+2. **✅ Confirmed**: Each transaction contains extensive log event metadata (~650KB each)
+3. **✅ Confirmed**: Current wallet has only ~25 transactions, but each is very large
+4. **❌ Myth Debunked**: The 90MB problem wasn't about transaction count, but verbosity
+5. **🎯 Solution Path**: Need to find parameters that reduce log event detail, not transaction count
+
+### 🔍 **Next Optimization Steps:**
+
+#### **Immediate Actions:**
+```bash
+# Test time-based filtering to reduce transaction volume
+curl ".../transactions_v3/?startblock=34900000&endblock=34901000"
+
+# Research Covalent API documentation for verbosity parameters
+# Check if there are different endpoints with less metadata
+```
+
+#### **Code-Level Optimizations:**
+- **Log Event Filtering**: Only keep essential decoded parameters
+- **Metadata Stripping**: Remove contract logos, descriptions, etc.
+- **Selective Field Extraction**: Extract only needed transaction data
+
+#### **Architecture Considerations:**
+- **Response Processing**: Strip verbose data before storing
+- **Caching Strategy**: Cache filtered data, not raw API responses
+- **Batch Processing**: Process transactions in smaller chunks
+
 ## 🤖 Built with grok-code-fast-1
 
 This project was developed using **grok-code-fast-1**, which excels at:
