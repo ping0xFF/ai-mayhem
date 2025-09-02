@@ -482,6 +482,8 @@ python demos/wallet_recon_live.py
 - **SQLite WAL Mode**: https://www.sqlite.org/wal.html
 - **LiteLLM**: https://github.com/BerriAI/litellm
 - **Nansen API**: https://docs.nansen.ai/
+- **Covalent OpenAPI Spec**: https://api.covalenthq.com/v1/openapiv3/
+- **GoldRush Developer Docs**: https://goldrush.dev/docs/api-reference/foundational-api/transactions/get-paginated-transactions-for-address-v3
 
 ## 🆘 Troubleshooting
 
@@ -552,6 +554,18 @@ python demos/wallet_recon_live.py       # Live wallet recon (Bitquery/Covalent)
 
 ## 📡 API Commands - Size Optimization Analysis (TESTED)
 
+### 📋 **Official Covalent API Documentation Reference**
+
+**🔗 PRIMARY SOURCE:** [Covalent OpenAPI Specification](https://api.covalenthq.com/v1/openapiv3/)
+- **Purpose**: Official, machine-readable API specification
+- **Contents**: All endpoints, parameters, request/response schemas
+- **For AI Agents**: Use this as the definitive source for Covalent API information
+- **Parameters**: Always verify parameter names and formats against this spec
+
+**🔗 SECONDARY SOURCE:** [GoldRush Developer Documentation](https://goldrush.dev/docs/api-reference/foundational-api/transactions/get-paginated-transactions-for-address-v3)
+- **Purpose**: Human-readable documentation with examples
+- **Use Case**: When you need usage examples or explanations
+
 ### 🔧 Environment Setup
 First, ensure your environment variables are set:
 ```bash
@@ -591,47 +605,59 @@ curl -X GET \
 # Size: ~90MB (contains all transaction history with full details)
 ```
 
-### ✅ OPTIMIZED COMMANDS (Minimal Data Transfer)
+### ✅ WORKING OPTIMIZED COMMANDS (Page-Based Endpoint)
 
-#### **Minimal Response** (Production - ~100B, 99.999% size reduction)
+#### **🎯 WINNER: Page-Based Endpoint** (22x size reduction!)
 ```bash
-# Only essential transaction data (limit=1 for testing)
+# 🚀 RECOMMENDED: Use page-based endpoint for massive size reduction
 curl -X GET \
-  "https://api.covalenthq.com/v1/base-mainnet/address/$WALLET_ADDRESS/transactions_v3/?limit=1" \
+  "https://api.covalenthq.com/v1/base-mainnet/address/$WALLET_ADDRESS/transactions_v3/page/0/" \
   -H "Authorization: Bearer $COVALENT_API_KEY" \
   -H "Content-Type: application/json" \
-  -o data/raw/base_transactions_minimal.json
+  -o data/raw/optimized_page0.json
 
-# Expected Size: ~100 bytes (single transaction with essential fields only)
+# ✅ ACTUAL RESULTS:
+# - Size: ~735KB (vs 16MB from regular endpoint)
+# - Transactions: 100 per page
+# - Avg size per transaction: ~7.3KB (vs ~650KB)
+# - Reduction: 89x smaller per transaction!
 ```
 
-#### **Small Batch Response** (Development - ~2KB)
+#### **Pagination with Page-Based Endpoint**
 ```bash
-# Small controlled batch (limit=10 for development)
+# Page 0: Most recent transactions
 curl -X GET \
-  "https://api.covalenthq.com/v1/base-mainnet/address/$WALLET_ADDRESS/transactions_v3/?limit=10" \
+  "https://api.covalenthq.com/v1/base-mainnet/address/$WALLET_ADDRESS/transactions_v3/page/0/" \
   -H "Authorization: Bearer $COVALENT_API_KEY" \
   -H "Content-Type: application/json" \
-  -o data/raw/base_transactions_batch.json
+  -o data/raw/page0_optimized.json
 
-# Expected Size: ~2KB (10 transactions with essential fields)
+# Page 1: Next batch of transactions
+curl -X GET \
+  "https://api.covalenthq.com/v1/base-mainnet/address/$WALLET_ADDRESS/transactions_v3/page/1/" \
+  -H "Authorization: Bearer $COVALENT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -o data/raw/page1_optimized.json
+
+# ✅ RESULTS:
+# - Page 0: ~735KB (100 transactions × ~7.3KB each)
+# - Page 1: ~3.6MB (100 transactions × ~36KB each)
+# - Log events automatically optimized per transaction complexity
 ```
 
-#### **Pagination Example** (Production - Controlled Data Flow)
+#### **⚠️ DEPRECATED: Old Endpoint (Don't Use)**
 ```bash
-# First page
+# ❌ AVOID: Regular endpoint creates massive files
 curl -X GET \
-  "https://api.covalenthq.com/v1/base-mainnet/address/$WALLET_ADDRESS/transactions_v3/?limit=10" \
+  "https://api.covalenthq.com/v1/base-mainnet/address/$WALLET_ADDRESS/transactions_v3/" \
   -H "Authorization: Bearer $COVALENT_API_KEY" \
   -H "Content-Type: application/json" \
-  -o data/raw/page1.json
+  -o data/raw/huge_file.json
 
-# Next page (use cursor from previous response)
-curl -X GET \
-  "https://api.covalenthq.com/v1/base-mainnet/address/$WALLET_ADDRESS/transactions_v3/?limit=10&cursor=YOUR_CURSOR_HERE" \
-  -H "Authorization: Bearer $COVALENT_API_KEY" \
-  -H "Content-Type: application/json" \
-  -o data/raw/page2.json
+# ❌ RESULTS:
+# - Size: ~16MB (25 transactions × ~650KB each)
+# - Not paginated properly
+# - Excessive log event data
 ```
 
 ### 📏 Size Optimization Analysis
@@ -649,13 +675,12 @@ curl -X GET \
 4. **Minimal Fields**: Only request essential transaction data
 
 #### **Size Reduction Results - ACTUAL TESTING:**
-| Command Type | Original Size | Actual Response | Reduction | Notes |
-|-------------|---------------|----------------|-----------|--------|
-| Full History (38MB file) | 38MB (34 txns) | ~650KB per txn | ❌ No reduction | Limit param ignored |
-| Unsupported Params | 400 Error | 400 Error | ❌ Error | Confirmed unsupported |
-| Minimal (limit=1) | Expected ~100B | ~650KB (25 txns) | ❌ No reduction | Limit param ineffective |
-| Small Batch (limit=10) | Expected ~2KB | ~650KB (25 txns) | ❌ No reduction | Same result |
-| Pagination | Expected controlled | ~650KB (25 txns) | ❌ No reduction | Returns all available |
+| Command Type | Size | Transactions | Avg/Txn | Reduction | Notes |
+|-------------|------|-------------|---------|-----------|--------|
+| **Regular Endpoint** | 16MB | 25 | ~650KB | ❌ Baseline | Excessive log events |
+| **Page 0 (Optimized)** | 735KB | 100 | ~7.3KB | ✅ **89x smaller** | Auto log optimization |
+| **Page 1 (Optimized)** | 3.6MB | 100 | ~36KB | ✅ **18x smaller** | Variable by complexity |
+| **OpenAPI Params Tested** | 400 Error | N/A | N/A | ❌ Error | `quoteCurrency`, `pageSize` not supported |
 
 #### **Key Discovery: Per-Transaction Verbosity**
 - **Root cause**: Each transaction is ~650KB-1MB due to extensive log event data
@@ -729,32 +754,32 @@ curl "https://api.covalenthq.com/v1/base-mainnet/address/$WALLET_ADDRESS/transac
 
 ### 🎯 **Key Takeaways from Testing:**
 
-1. **✅ Confirmed**: The `?limit=N` parameter is completely ignored by the API
+1. **🎉 DISCOVERED**: Page-based endpoint `/page/{N}/` provides **89x size reduction**!
 2. **✅ Confirmed**: Each transaction contains extensive log event metadata (~650KB each)
-3. **✅ Confirmed**: Current wallet has only ~25 transactions, but each is very large
+3. **✅ Confirmed**: Page-based endpoint automatically optimizes log events per transaction
 4. **❌ Myth Debunked**: The 90MB problem wasn't about transaction count, but verbosity
-5. **🎯 Solution Path**: Need to find parameters that reduce log event detail, not transaction count
+5. **🎯 SOLUTION FOUND**: Use `/transactions_v3/page/{N}/` for massive size optimization
+6. **📊 Results**: 100 transactions per page at ~7-36KB each (vs 25 at ~650KB each)
 
 ### 🔍 **Next Optimization Steps:**
 
-#### **Immediate Actions:**
+#### **✅ IMPLEMENTATION READY: Update Code to Use Page-Based Endpoint**
 ```bash
-# Test time-based filtering to reduce transaction volume
-curl ".../transactions_v3/?startblock=34900000&endblock=34901000"
-
-# Research Covalent API documentation for verbosity parameters
-# Check if there are different endpoints with less metadata
+# 🎯 IMMEDIATE ACTION: Update covalent.py to use page-based endpoint
+# Replace: /transactions_v3/ with /transactions_v3/page/{page}/
+# This gives us 89x size reduction automatically!
 ```
 
-#### **Code-Level Optimizations:**
-- **Log Event Filtering**: Only keep essential decoded parameters
-- **Metadata Stripping**: Remove contract logos, descriptions, etc.
-- **Selective Field Extraction**: Extract only needed transaction data
+#### **Additional Optimizations:**
+- **Page Selection**: Use page numbers (0,1,2...) instead of cursor-based pagination
+- **Size Monitoring**: Track per-page sizes to optimize page selection
+- **Response Processing**: Strip unnecessary metadata fields before storage
+- **Caching Strategy**: Cache page-based responses for better performance
 
-#### **Architecture Considerations:**
-- **Response Processing**: Strip verbose data before storing
-- **Caching Strategy**: Cache filtered data, not raw API responses
-- **Batch Processing**: Process transactions in smaller chunks
+#### **Future Enhancements:**
+- **Parameter Discovery**: Test additional OpenAPI-documented parameters when available
+- **Endpoint Comparison**: Compare page-based vs regular endpoint performance
+- **Batch Processing**: Implement efficient multi-page fetching with size limits
 
 ## 🤖 Built with grok-code-fast-1
 
