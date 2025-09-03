@@ -1,0 +1,19 @@
+{
+  "base_urls": [
+    "https://eth-mainnet.g.alchemy.com/v2",
+    "https://base-mainnet.g.alchemy.com/v2",
+    "https://polygon-mainnet.g.alchemy.com/v2"
+  ],
+  "common_endpoints": [
+    "/getAssetTransfers",
+    "/getTransactionReceipts",
+    "/getLogs",
+    "/getTransaction",
+    "/getBlock",
+    "/getBalance",
+    "/getTokenBalances",
+    "/getTokenMetadata"
+  ],
+  "note": "These are common Alchemy endpoints based on documentation. Test with actual API calls.",
+  "source": "https://github.com/alchemyplatform/docs"
+}
