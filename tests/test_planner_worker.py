@@ -206,9 +206,9 @@ class TestPlannerWorker(unittest.IsolatedAsyncioTestCase):
         from nodes.worker import worker_node
         import os
 
-        original_live = os.environ.get("BITQUERY_LIVE", "0")
+        original_token = os.environ.get("BITQUERY_ACCESS_TOKEN")
         original_source = os.environ.get("WALLET_RECON_SOURCE", "covalent")
-        os.environ["BITQUERY_LIVE"] = "0"
+        os.environ.pop("BITQUERY_ACCESS_TOKEN", None)
         os.environ["WALLET_RECON_SOURCE"] = "mock"
 
         try:
@@ -249,10 +249,10 @@ class TestPlannerWorker(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(event_ids, event_ids2)
         finally:
             # Restore original environment
-            if original_live:
-                os.environ["BITQUERY_LIVE"] = original_live
-            elif "BITQUERY_LIVE" in os.environ:
-                del os.environ["BITQUERY_LIVE"]
+            if original_token:
+                os.environ["BITQUERY_ACCESS_TOKEN"] = original_token
+            elif "BITQUERY_ACCESS_TOKEN" in os.environ:
+                del os.environ["BITQUERY_ACCESS_TOKEN"]
 
             if original_source:
                 os.environ["WALLET_RECON_SOURCE"] = original_source
@@ -265,9 +265,9 @@ class TestPlannerWorker(unittest.IsolatedAsyncioTestCase):
         import os
 
         original_source = os.environ.get("WALLET_RECON_SOURCE", "covalent")
-        original_live = os.environ.get("BITQUERY_LIVE", "0")
+        original_token = os.environ.get("BITQUERY_ACCESS_TOKEN")
         os.environ["WALLET_RECON_SOURCE"] = "covalent"
-        os.environ["BITQUERY_LIVE"] = "0"
+        os.environ.pop("BITQUERY_ACCESS_TOKEN", None)
 
         try:
             # Test wallet activity fetch
@@ -317,10 +317,10 @@ class TestPlannerWorker(unittest.IsolatedAsyncioTestCase):
 
         finally:
             # Restore original environment
-            if original_live:
-                os.environ["BITQUERY_LIVE"] = original_live
-            elif "BITQUERY_LIVE" in os.environ:
-                del os.environ["BITQUERY_LIVE"]
+            if original_token:
+                os.environ["BITQUERY_ACCESS_TOKEN"] = original_token
+            elif "BITQUERY_ACCESS_TOKEN" in os.environ:
+                del os.environ["BITQUERY_ACCESS_TOKEN"]
 
             if original_source:
                 os.environ["WALLET_RECON_SOURCE"] = original_source

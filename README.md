@@ -120,7 +120,7 @@ BITQUERY_API_KEY=your_bitquery_api_key_here
 
 # Source Selection
 WALLET_RECON_SOURCE=alchemy  # Options: alchemy, covalent, bitquery
-BITQUERY_LIVE=0              # Set to 1 for live Bitquery API
+# BITQUERY_LIVE=0              # Deprecated - use BITQUERY_ACCESS_TOKEN instead
 
 # Optional: Enable verbose logging for debugging
 BITQUERY_VERBOSE=1
@@ -394,7 +394,7 @@ ALCHEMY_API_KEY=your_alchemy_key
 # Fallback sources
 COVALENT_API_KEY=your_covalent_key
 BITQUERY_API_KEY=your_bitquery_key
-BITQUERY_LIVE=1  # Enable live Bitquery API
+# BITQUERY_LIVE=1  # Deprecated - use BITQUERY_ACCESS_TOKEN instead
 ```
 
 2. **Replace Mock Tools** (Automatic Fallback):

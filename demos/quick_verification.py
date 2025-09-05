@@ -85,14 +85,14 @@ async def test_json_storage():
 
 
 async def test_old_file_removed():
-    """Test that the old planner_worker.py file is gone."""
-    print("\n🗑️ Testing old file removal...")
+    """Test that legacy functions are removed."""
+    print("\n🗑️ Testing legacy function removal...")
     
     try:
-        import planner_worker
-        print("❌ Old planner_worker.py still exists")
+        from agent import legacy_planner_node
+        print("❌ Legacy functions still exist")
     except ImportError:
-        print("✅ Old planner_worker.py properly removed")
+        print("✅ Legacy functions properly removed")
 
 
 async def main():

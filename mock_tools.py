@@ -307,7 +307,8 @@ def fetch_wallet_activity_bitquery(address: str, chain: str = "base", since_ts: 
     """
     # Check source selection
     source = os.getenv("WALLET_RECON_SOURCE", "covalent").lower()
-    use_live = os.getenv("BITQUERY_LIVE", "0").lower() in ("1", "true", "yes")
+    # Check if Bitquery access token is available
+    use_live = bool(os.getenv("BITQUERY_ACCESS_TOKEN"))
 
     # Debug logging
     verbose = os.getenv("BITQUERY_VERBOSE", "0").lower() in ("1", "true", "yes")
@@ -395,7 +396,7 @@ def fetch_wallet_activity_bitquery(address: str, chain: str = "base", since_ts: 
 def _fetch_wallet_activity_bitquery_mock(address: str, chain: str = "base", since_ts: int = 0) -> Dict[str, Any]:
     """
     Mock implementation of Bitquery wallet activity fetch.
-    Used when BITQUERY_LIVE is not set or live API fails.
+    Used when BITQUERY_ACCESS_TOKEN is not set or live API fails.
     """
     # Simulate network delay and API call
     time.sleep(0.15)

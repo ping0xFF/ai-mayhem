@@ -8,7 +8,8 @@ from typing import Dict, Any
 
 from json_storage import get_cursor, set_cursor
 from data_model import save_raw_response, NormalizedEvent
-from mock_tools import fetch_wallet_activity, fetch_lp_activity, web_metrics_lookup, fetch_wallet_activity_bitquery
+from mock_tools import fetch_wallet_activity, fetch_lp_activity, web_metrics_lookup
+from real_apis.provider_router import get_wallet_provider
 
 
 async def worker_node(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -39,17 +40,23 @@ async def worker_node(state: Dict[str, Any]) -> Dict[str, Any]:
             cursor_key = f"wallet:{wallet}"
             since_ts = state.get("cursors", {}).get(cursor_key, 0)
 
-            # Fetch wallet activity using selected adapter (Covalent primary, Bitquery fallback)
-            response = fetch_wallet_activity_bitquery(wallet, "base", since_ts)
+            # Get provider router and log selected provider
+            router = get_wallet_provider()
+            selected_provider = router.get_selected_provider()
+            print(f"    🔍 provider={selected_provider}")
+
+            # Fetch wallet activity using provider router
+            response = await router.fetch_wallet_activity(
+                address=wallet,
+                chain="base",
+                since_ts=since_ts,
+                max_transactions=1000,
+                hours_back=None
+            )
 
             # Determine provider and create appropriate raw_id
-            provider_info = response.get("provider", {})
-            if isinstance(provider_info, dict):
-                provider_name = provider_info.get("name", "unknown")
-                chain = provider_info.get("chain", "base")
-            else:
-                provider_name = "bitquery"  # Legacy format
-                chain = "base"
+            provider_name = response.get("metadata", {}).get("source", selected_provider)
+            chain = response.get("metadata", {}).get("network", "base")
 
             raw_id = f"{provider_name}_wallet_{wallet}_{int(datetime.now().timestamp())}"
 
@@ -67,9 +74,9 @@ async def worker_node(state: Dict[str, Any]) -> Dict[str, Any]:
             events = response.get("events", [])
             raw_data = {
                 "wallet": wallet,
-                "provider": provider_info,
+                "provider": provider_name,
                 "event_count": len(events),
-                "next_cursor": response.get("metadata", {}).get("next_cursor") or response.get("next_cursor")
+                "next_cursor": response.get("metadata", {}).get("next_page_key") or response.get("next_cursor")
             }
             source_ids.append(raw_id)
 

@@ -37,7 +37,7 @@ async def test_live_bitquery_integration():
 
     # Check environment
     access_token = os.getenv("BITQUERY_ACCESS_TOKEN") or os.getenv("BITQUERY_API_KEY")
-    live_mode = os.getenv("BITQUERY_LIVE", "0").lower() in ("1", "true", "yes")
+    live_mode = bool(os.getenv("BITQUERY_ACCESS_TOKEN"))
 
     print("🔧 Environment Check:")
     if access_token:
@@ -45,7 +45,7 @@ async def test_live_bitquery_integration():
         print(f"   Token preview: {access_token[:20]}...")
     else:
         print("   BITQUERY_ACCESS_TOKEN: ❌ Missing")
-    print(f"   BITQUERY_LIVE: {'🔴 True (LIVE)' if live_mode else '🟡 False (MOCK)'}")
+    print(f"   Live Mode: {'🔴 True (LIVE)' if live_mode else '🟡 False (MOCK)'}")
 
     if not access_token and live_mode:
         print("   ⚠️  WARNING: Live mode enabled but no API key - will fallback to mock")
@@ -207,7 +207,7 @@ async def test_live_bitquery_integration():
         print("🎉 LIVE MODE: All tests passed with real Bitquery API!")
     else:
         print("🟡 MOCK MODE: All tests passed with mock data")
-        print("   💡 To test live mode: set BITQUERY_LIVE=1 and BITQUERY_ACCESS_TOKEN (or BITQUERY_API_KEY)")
+        print("   💡 To test live mode: set BITQUERY_ACCESS_TOKEN in your .env file")
 
     return True
 
@@ -225,10 +225,11 @@ async def demo_live_wallet_recon():
     print()
 
     # Force live mode for demo
-    original_live = os.getenv("BITQUERY_LIVE")
     original_token = os.getenv("BITQUERY_ACCESS_TOKEN") or os.getenv("BITQUERY_API_KEY")
-
-    os.environ["BITQUERY_LIVE"] = "1"
+    
+    # Ensure we have a token for live mode
+    if not original_token:
+        os.environ["BITQUERY_ACCESS_TOKEN"] = "demo_token_for_testing"
 
     if not original_token:
         print("⚠️  No BITQUERY_API_KEY found - demo will fallback to mock")
@@ -241,7 +242,7 @@ async def demo_live_wallet_recon():
         response = fetch_wallet_activity_bitquery(active_wallet, "base")
 
         print("📊 Live Query Results:")
-        print(f"   🔴 Live Mode: {'Yes' if os.getenv('BITQUERY_LIVE') == '1' else 'No'}")
+        print(f"   🔴 Live Mode: {'Yes' if os.getenv('BITQUERY_ACCESS_TOKEN') else 'No'}")
         print(f"   📈 Events: {len(response.get('events', []))}")
         print(f"   🏷️  Provider: {response.get('provider')}")
 
@@ -268,10 +269,10 @@ async def demo_live_wallet_recon():
 
     finally:
         # Restore original environment
-        if original_live is not None:
-            os.environ["BITQUERY_LIVE"] = original_live
-        elif "BITQUERY_LIVE" in os.environ:
-            del os.environ["BITQUERY_LIVE"]
+        if original_token:
+            os.environ["BITQUERY_ACCESS_TOKEN"] = original_token
+        elif "BITQUERY_ACCESS_TOKEN" in os.environ and not original_token:
+            del os.environ["BITQUERY_ACCESS_TOKEN"]
 
 
 async def main():

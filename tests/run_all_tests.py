@@ -34,6 +34,9 @@ TEST_FILES = [
     "test_live.py",                  # Live integration (may require setup)
 ]
 
+# Design check script
+DESIGN_CHECK_SCRIPT = "scripts/design_check.py"
+
 class TestRunner:
     """Comprehensive test runner with detailed reporting."""
 
@@ -93,16 +96,67 @@ class TestRunner:
             self.log(f"💥 {error_msg}", force=True)
             return False, error_msg
 
+    def run_design_check(self) -> Tuple[bool, str]:
+        """Run the design check script."""
+        design_check_path = Path(__file__).parent.parent / DESIGN_CHECK_SCRIPT
+        
+        if not design_check_path.exists():
+            return False, f"Design check script not found: {DESIGN_CHECK_SCRIPT}"
+
+        self.log("🔍 Running design ⇄ implementation checkup...")
+
+        try:
+            cmd = [sys.executable, str(design_check_path), "--exit-code"]
+            if not self.verbose:
+                cmd.append("--quiet")
+            
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=60,  # 1 minute timeout
+                cwd=Path(__file__).parent.parent
+            )
+
+            success = result.returncode == 0
+            output = result.stdout + result.stderr
+
+            if success:
+                self.log("✅ Design check PASSED", force=True)
+            else:
+                self.log("❌ Design check FAILED", force=True)
+                if not self.quiet:
+                    self.log("Output:", force=True)
+                    self.log(output, force=True)
+
+            return success, output
+
+        except subprocess.TimeoutExpired:
+            error_msg = "Design check timed out after 1 minute"
+            self.log(f"⏰ {error_msg}", force=True)
+            return False, error_msg
+
+        except Exception as e:
+            error_msg = f"Error running design check: {str(e)}"
+            self.log(f"💥 {error_msg}", force=True)
+            return False, error_msg
+
     def run_all_tests(self) -> Dict[str, Tuple[bool, str]]:
         """Run all test files and collect results."""
         self.start_time = time.time()
         self.log("🚀 Starting comprehensive test suite...", force=True)
         self.log(f"📁 Test directory: {Path(__file__).parent}", force=True)
-        self.log(f"📋 Will run {len(TEST_FILES)} test files", force=True)
+        self.log(f"📋 Will run {len(TEST_FILES)} test files + design check", force=True)
         self.log("=" * 60, force=True)
 
         results = {}
 
+        # Run design check first
+        success, output = self.run_design_check()
+        results["design_check"] = (success, output)
+        self.log("")  # Add spacing
+
+        # Run all test files
         for test_file in TEST_FILES:
             success, output = self.run_single_test(test_file)
             results[test_file] = (success, output)
