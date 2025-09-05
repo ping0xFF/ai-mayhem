@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
 """
 Alchemy wallet activity adapter for Base chain.
-High-level wallet-centric endpoints with massive size optimization (180x smaller than Covalent).
+High-level wallet-centric endpoints with optimal response sizes (~509 bytes per transaction).
+
 🔗 OFFICIAL API DOCUMENTATION:
 - Developer Documentation: https://docs.alchemy.com/
 - API Reference: https://docs.alchemy.com/reference
 - OpenAPI Specification: https://docs.alchemy.com/reference/openapi
 
+📝 NAMING CONVENTION NOTE:
+This file is named 'alchemy_provider.py' (not 'alchemy.py') to avoid naming conflicts
+with the official Alchemy SDK package. The SDK is imported as 'from alchemy import Alchemy',
+so naming this file 'alchemy.py' would create a circular import conflict.
+
 ⚠️  IMPORTANT: Based on our comprehensive testing, use alchemy_getAssetTransfers endpoint
-    for 180x size reduction compared to Covalent's 90MB+ responses.
+    for optimal response sizes compared to other providers.
 """
 
 import asyncio

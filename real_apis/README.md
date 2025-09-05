@@ -14,6 +14,8 @@ This directory contains production-ready API integrations for blockchain data pr
 
 ### **File**: `alchemy_provider.py` 
 
+**📝 Naming Note**: This file is named `alchemy_provider.py` (not `alchemy.py`) to avoid naming conflicts with the official Alchemy SDK package.
+
 **Why Alchemy Won:**
 - ✅ **Optimal Response Size**: ~509 bytes per transaction
 - ✅ **Real Data**: Recent Base network transactions with full details
@@ -88,7 +90,8 @@ result = await fetch_wallet_activity_alchemy_live(
 )
 
 print(f"Found {len(result['events'])} transactions")
-print(f"Response size: {result['metadata']['response_size_bytes']} bytes")
+print(f"Network: {result['metadata']['network']}")
+print(f"Source: {result['metadata']['source']}")
 ```
 
 ## 📡 **Covalent - Secondary Provider**
@@ -162,8 +165,7 @@ ALCHEMY_API_KEY=your_key
 
 # Fallback providers (optional)
 COVALENT_API_KEY=your_key
-BITQUERY_API_KEY=your_key
-BITQUERY_LIVE=1
+BITQUERY_ACCESS_TOKEN=your_key
 ```
 
 ## 📊 **Performance Comparison**
@@ -187,7 +189,8 @@ BITQUERY_LIVE=1
 
 ```bash
 # Test Alchemy (primary)
-python -m unittest real_apis.test_alchemy -v
+cd real_apis
+python -m unittest test_alchemy.py -v
 
 # Test Covalent integration
 python demos/covalent_demo.py
