@@ -6,3 +6,6 @@ langchain-core
 langchain-openai
 langgraph-checkpoint-sqlite
 aiosqlite
+alchemy-sdk
+dataclass-wizard
+aiohttp>=3.8.0

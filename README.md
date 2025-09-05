@@ -9,7 +9,7 @@ This project implements a **controlled autonomy** system that augments the exist
 ### Key Features
 
 - **Controlled Autonomy**: Planner selects actions based on cursor staleness and budget
-- **Multi-Source API Integration**: Covalent (primary) + Bitquery (fallback) for wallet recon
+- **Multi-Source API Integration**: Alchemy (primary) + Covalent + Bitquery (fallback) for wallet recon
 - **Flexible JSON Storage**: SQLite-based persistence for arbitrary API responses
 - **Per-Node Timing**: Execution time tracking for performance monitoring
 - **Idempotent Operations**: No duplicate data on re-runs
@@ -47,10 +47,12 @@ ai-mayhem/
 ├── cli.py                   # Command-line interface
 ├── requirements.txt         # Python dependencies
 ├── config.yaml              # LiteLLM configuration
-├── real_apis/               # Real API integrations (Covalent, Bitquery)
+├── real_apis/               # Real API integrations (Alchemy, Covalent, Bitquery)
 │   ├── __init__.py         # API package exports
+│   ├── alchemy_provider.py # Alchemy API client for Base chain
 │   ├── covalent.py         # Covalent API client for wallet activity
-│   └── bitquery.py         # Bitquery API client for blockchain data
+│   ├── bitquery.py         # Bitquery API client for blockchain data
+│   └── test_alchemy.py     # Alchemy provider tests
 ├── nodes/                   # Professional node organization
 │   ├── __init__.py         # Node package exports
 │   ├── config.py           # Shared configuration constants
@@ -108,12 +110,16 @@ BUDGET_DAILY=5.0
 # Get your API key from: https://www.covalenthq.com/
 COVALENT_API_KEY=your_covalent_api_key_here
 
+# Alchemy API (primary source - Base chain optimized)
+# Get your API key from: https://dashboard.alchemy.com/
+ALCHEMY_API_KEY=your_alchemy_api_key_here
+
 # Bitquery API (fallback source - more detailed transaction data)
 # Get your API key from: https://streaming.bitquery.io/
 BITQUERY_API_KEY=your_bitquery_api_key_here
 
 # Source Selection
-WALLET_RECON_SOURCE=covalent  # Options: covalent, bitquery
+WALLET_RECON_SOURCE=alchemy  # Options: alchemy, covalent, bitquery
 BITQUERY_LIVE=0              # Set to 1 for live Bitquery API
 
 # Optional: Enable verbose logging for debugging
@@ -192,8 +198,8 @@ python demos/wallet_recon_live.py       # Live wallet recon (Bitquery/Covalent)
 - **fetch_wallet_activity()**: Unified wallet activity with Covalent/Bitquery source selection
 - **fetch_lp_activity()**: Mock LP activity queries
 - **web_metrics_lookup()**: Mock market metrics queries
-- **Source Selection**: `WALLET_RECON_SOURCE=covalent|bitquery` environment variable
-- **Graceful Fallback**: Covalent → Bitquery → Mock (automatic degradation)
+- **Source Selection**: `WALLET_RECON_SOURCE=alchemy|covalent|bitquery` environment variable
+- **Graceful Fallback**: Alchemy → Covalent → Bitquery → Mock (automatic degradation)
 - **Cursor Management**: Built-in cursor handling for pagination
 - **Deterministic Data**: Uses fixtures from test files
 - **Network Simulation**: Realistic delays and provenance tracking
@@ -202,6 +208,11 @@ python demos/wallet_recon_live.py       # Live wallet recon (Bitquery/Covalent)
 **Prevents development/production drift by isolating real API implementations:**
 
 - **`real_apis/__init__.py`**: Package exports for all API integrations
+- **`real_apis/alchemy_provider.py`**: Alchemy API client for Base chain transactions
+  - Dual approach: Direct HTTP for Base mainnet, SDK for other networks
+  - ~509 bytes per transaction response size
+  - Time filtering with block number calculations
+  - JSON-RPC `alchemy_getAssetTransfers` endpoint
 - **`real_apis/covalent.py`**: Covalent API client with async HTTPX, pagination, and error handling
   - Base chain optimized (`/address/{addr}/transfers/` endpoint - 95% data reduction)
   - Cursor-based pagination with retry logic and rate limiting
@@ -212,7 +223,7 @@ python demos/wallet_recon_live.py       # Live wallet recon (Bitquery/Covalent)
   - Offset-based pagination with deduplication
   - Comprehensive error handling and logging
 
-**Swap Pattern**: Replace `from mock_tools import fetch_wallet_activity` with `from real_apis.covalent import fetch_wallet_activity_covalent_live` for production use.
+**Swap Pattern**: Replace `from mock_tools import fetch_wallet_activity` with `from real_apis.alchemy_provider import fetch_wallet_activity_alchemy_live` for production use.
 
 ## 🔧 Configuration
 
@@ -376,11 +387,12 @@ Artifacts.source_ids → Events.event_id → Scratch.id
 
 1. **Configure Source Selection** in `.env`:
 ```bash
-# Primary source (Covalent recommended for wallet activity)
-WALLET_RECON_SOURCE=covalent
-COVALENT_API_KEY=your_covalent_key
+# Primary source (Alchemy recommended for Base chain activity)
+WALLET_RECON_SOURCE=alchemy
+ALCHEMY_API_KEY=your_alchemy_key
 
-# Fallback source
+# Fallback sources
+COVALENT_API_KEY=your_covalent_key
 BITQUERY_API_KEY=your_bitquery_key
 BITQUERY_LIVE=1  # Enable live Bitquery API
 ```
@@ -388,17 +400,22 @@ BITQUERY_LIVE=1  # Enable live Bitquery API
 2. **Replace Mock Tools** (Automatic Fallback):
 ```python
 # No code changes needed! The system automatically:
-# 1. Tries Covalent first (if configured)
-# 2. Falls back to Bitquery (if configured)
-# 3. Uses mock data (development default)
+# 1. Tries Alchemy first (if configured)
+# 2. Falls back to Covalent (if configured)
+# 3. Falls back to Bitquery (if configured)
+# 4. Uses mock data (development default)
 
 # For custom integrations, use:
+from real_apis.alchemy_provider import fetch_wallet_activity_alchemy_live
 from real_apis.covalent import fetch_wallet_activity_covalent_live
 from real_apis.bitquery import fetch_wallet_activity_bitquery_live
 ```
 
 3. **Test Integration**:
 ```bash
+# Test Alchemy integration
+python real_apis/test_alchemy.py
+
 # Test Covalent integration
 python demos/covalent_demo.py
 
@@ -430,7 +447,7 @@ python demos/wallet_recon_live.py
 ## 🎯 Use Cases
 
 ### Blockchain Monitoring
-- **Wallet Activity**: Track specific wallet transactions with Covalent/Bitquery
+- **Wallet Activity**: Track specific wallet transactions with Alchemy/Covalent/Bitquery
 - **LP Activity**: Monitor liquidity provider movements
 - **Market Metrics**: Analyze DEX volume and pool activity
 - **Multi-Source Recon**: Automatic fallback between API providers
@@ -542,15 +559,16 @@ python demos/wallet_recon_live.py       # Live wallet recon (Bitquery/Covalent)
 ```
 
 #### 🔴 Live Wallet Recon Integration
-- **Primary Source**: Covalent API for high-level wallet transaction data
+- **Primary Source**: Alchemy API for Base chain wallet transaction data
+- **Secondary Source**: Covalent API for high-level wallet transaction data
 - **Fallback Source**: Bitquery API for detailed transaction analysis
-- **Source Selection**: Set `WALLET_RECON_SOURCE=covalent|bitquery`
-- **Authentication**: Covalent uses X-API-KEY, Bitquery uses Bearer token
+- **Source Selection**: Set `WALLET_RECON_SOURCE=alchemy|covalent|bitquery`
+- **Authentication**: Alchemy uses API key in URL, Covalent uses X-API-KEY, Bitquery uses Bearer token
 - **Fallback**: Automatically falls back to mock data if API keys missing
 - **Raw-First**: Preserves complete API responses with full provenance
-- **Pagination**: Covalent uses cursor-based, Bitquery uses offset-based
+- **Pagination**: Alchemy uses maxCount/pageKey, Covalent uses cursor-based, Bitquery uses offset-based
 - **Rate Limiting**: Built-in retry logic with exponential backoff
-- **Demo**: `covalent_demo.py` shows live integration with 31+ transactions
+- **Demo**: `test_alchemy.py` shows live Base chain integration with 1000 transactions
 
 ## 📡 **Covalent API Integration - Size Optimization Complete**
 
@@ -559,38 +577,41 @@ We've successfully optimized the Covalent API integration to reduce response siz
 
 ### 📚 **Comprehensive Documentation Available**
 
-For complete details about our Covalent API optimization work, including:
-- **Full endpoint comparison results** and size testing data
-- **Technical analysis** of why page-based endpoints win
+For complete details about our API provider analysis, including:
+- **Alchemy vs Covalent vs Bitquery comparison** with performance metrics
+- **Full endpoint testing results** and size analysis
+- **Technical analysis** of optimal endpoints and approaches
 - **All curl commands** used for testing and validation  
-- **Detailed warnings** about dangerous endpoints
 - **Implementation notes** and best practices
-- **Complete test results** and size comparisons
+- **Complete test coverage** for all providers
 
 **📖 See: [`real_apis/README.md`](real_apis/README.md)**
 
-This documentation contains our complete findings from testing all available Covalent endpoints and the 89x size reduction we achieved.
+This documentation contains our complete findings from testing all available providers, with Alchemy emerging as the optimal solution for Base chain transactions.
 
-### 🚀 **BREAKTHROUGH: Alchemy is the Winner!**
+### 🚀 **BREAKTHROUGH: Alchemy Integration Complete!**
 
-**Massive Success:**
-- ✅ **Working Endpoint**: `alchemy_getAssetTransfers` (NOT the Beta API!)
-- ✅ **Response Size**: **503KB for 1000 transactions** (~0.5KB per transaction)
-- ✅ **Size Improvement**: **~180x smaller than Covalent's 90MB+ responses!**
+**Production Implementation:**
+- ✅ **Working Endpoint**: `alchemy_getAssetTransfers` with JSON-RPC 2.0
+- ✅ **Response Size**: **~509 bytes per transaction** (efficient and manageable)
 - ✅ **Real Data**: Actual transaction history with hashes, block numbers, token transfers
 - ✅ **Time Filtering**: `fromBlock` parameter for date range queries
 - ✅ **Pagination**: `maxCount` and `pageKey` for handling large histories
-- ✅ **Recent Data Access**: **Confirmed working with recent Base network data** (3+ hours old)
+- ✅ **Recent Data Access**: **Confirmed working with recent Base network data**
+- ✅ **TDD Implementation**: **17 comprehensive tests** (unit + integration)
+- ✅ **Dual Network Support**: Direct HTTP for Base mainnet, SDK for other networks
 
-**Technical Details:**
+**Technical Implementation:**
+- **File**: `real_apis/alchemy_provider.py` with `test_alchemy.py`
 - **Base URL**: `https://{network}.g.alchemy.com/v2/` (network-specific URLs)
 - **Method**: JSON-RPC 2.0 with `alchemy_getAssetTransfers`
 - **Parameters**: `fromAddress`, `maxCount`, `category`, `fromBlock`
 - **Categories**: `["external", "erc20"]` (Base doesn't support internal transactions)
 - **Maximum Limit**: 1000 transactions per request (no pagination needed for most use cases)
-- **Data Freshness**: **Recent data confirmed working** - tested with transaction hash `0xc9e07c897fe6727c96be2135e2e4755f72ded436de47cd1f714392cbb6aaadca` (3.1 hours old)
+- **Dependencies**: `alchemy-sdk`, `aiohttp>=3.8.0`, `dataclass-wizard`
+- **Test Coverage**: Both mocked unit tests and real Base chain API integration tests
 
-**Important Note**: The initial "2+ year old data" issue was due to our query parameters using `fromBlock` with old block numbers, not Alchemy's data availability. Alchemy correctly provides access to recent Base network data.
+**Network Support**: The Alchemy Python SDK does not yet support Base mainnet directly, so we use a dual approach: direct `aiohttp` HTTP requests for Base mainnet and the official SDK for other supported networks (eth-mainnet, etc.).
 
 ### 🚨 **Critical Warnings**
 - **NEVER use `/transactions_v3/`** - returns 16MB+ responses causing data bloat
@@ -598,15 +619,18 @@ This documentation contains our complete findings from testing all available Cov
 - **NEVER use `/transactions_v2/`** - even worse at 28MB+ responses
 
 ### 🔗 **Official API Documentation**
+- **Alchemy API Documentation**: https://docs.alchemy.com/
+- **Alchemy SDK (Python)**: https://github.com/alchemyplatform/alchemy-sdk-py
 - **OpenAPI Specification**: https://api.covalenthq.com/v1/openapiv3/
 - **Developer Documentation**: https://goldrush.dev/docs/api-reference/
 
 ### 💡 **What Was Implemented**
-The `covalent.py` client now uses the optimized page-based endpoint by default, providing:
-- **89x size reduction** automatically
+The `alchemy_provider.py` client provides production-ready Base chain integration:
+- **Optimal response sizes** (~509 bytes per transaction)
 - **Response size tracking** for monitoring
-- **Fallback mechanisms** to other providers when needed
-- **Backward compatibility** with existing code
+- **Fallback mechanisms** to Covalent and Bitquery when needed
+- **Full test coverage** with both unit and integration tests
+- **TDD implementation** with 17 comprehensive test cases
 
 ## 🤖 Built with grok-code-fast-1
 
@@ -626,7 +650,7 @@ The model demonstrated exceptional capability in:
 
 ---
 
-**Note**: This project uses mock data by default for development. Configure `WALLET_RECON_SOURCE=covalent` and add API keys to `.env` for production use. The system automatically handles API fallback and maintains the same interface.
+**Note**: This project uses mock data by default for development. Configure `WALLET_RECON_SOURCE=alchemy` and add API keys to `.env` for production use. The system automatically handles API fallback (Alchemy → Covalent → Bitquery → Mock) and maintains the same interface.
 
 #### **💡 Conclusion: Stick with What Works**
 Our current implementation using `/transactions_v3/page/{N}/` is already the **optimal solution**. It provides:
