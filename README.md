@@ -284,8 +284,8 @@ python demos/three_layer_demo.py
 # 7. Verify imports work correctly
 python -c "from nodes import planner_node, worker_node, analyze_node, brief_node, memory_node; print('✅ All nodes imported successfully')"
 
-# 8. Check that old planner_worker.py is gone (should fail)
-python -c "import planner_worker" 2>/dev/null && echo "❌ Old file still exists" || echo "✅ Old file properly removed"
+# 8. Check that legacy functions are available for historical use
+python -c "from agent import legacy_planner_node, legacy_worker_node; print('✅ Legacy functions available for historical use')"
 
 # 9. Full demo (may hang - use Ctrl+C if needed)
 python demos/lp_e2e_demo.py
@@ -299,6 +299,7 @@ python demos/lp_e2e_demo.py
 - **`test_enhanced_lp.py`**: 7 tests should pass (LP tools, worker saves, normalization, signals, idempotency)
 - **`test_lp_brief_gating.py`**: 7 tests should pass (LP gating, artifact persistence, provenance, thresholds)
 - **`test_planner_worker.py`**: 4 tests should pass (planner selection, worker saves, analyze rollup, brief gating)
+- **Legacy Functions**: `legacy_planner_node()` and `legacy_worker_node()` are preserved in `agent.py` for historical reference and potential future use
 - **`test_three_layer_data_model.py`**: 7 tests should pass (all three layers, provenance, idempotency)
 - **`test_json_storage.py`**: 12 tests should pass (upsert, query, delete, validation, etc.)
 - **`test_agent.py`**: All async node tests should pass

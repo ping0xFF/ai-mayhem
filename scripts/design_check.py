@@ -46,7 +46,6 @@ class DesignChecker:
         
         stale_patterns = [
             "planner_worker.py",  # Removed file
-            "legacy_planner",     # Removed function
             "BITQUERY_LIVE",      # Deprecated env var
         ]
         
@@ -55,7 +54,7 @@ class DesignChecker:
         for pattern in stale_patterns:
             try:
                 result = subprocess.run(
-                    ["grep", "-r", "-n", pattern, str(self.base_dir)],
+                    ["grep", "-r", "-n", "--exclude-dir=.git", "--exclude-dir=__pycache__", "--exclude=*.pyc", pattern, str(self.base_dir)],
                     capture_output=True,
                     text=True,
                     cwd=self.base_dir
@@ -71,10 +70,6 @@ class DesignChecker:
                             if ("test_planner_worker.py" in line or 
                                 "removed" in line.lower() or 
                                 "design_check.py" in line):
-                                continue
-                        elif pattern == "legacy_planner":
-                            # Allow references in comments about removal
-                            if "removed" in line.lower() or "legacy" in line.lower():
                                 continue
                         elif pattern == "BITQUERY_LIVE":
                             # Allow references in comments about deprecation and design check script
@@ -296,6 +291,7 @@ def main():
     
     parser = argparse.ArgumentParser(description="Design ⇄ Implementation Checkup")
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
+    parser.add_argument("--quiet", action="store_true", help="Quiet output")
     parser.add_argument("--exit-code", action="store_true", help="Exit with non-zero code on errors")
     
     args = parser.parse_args()
