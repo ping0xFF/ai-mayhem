@@ -8,7 +8,7 @@ from typing import Dict, Any, List
 from collections import Counter
 
 from data_model import normalize_event, NormalizedEvent
-from .output import formatter
+from .rich_output import formatter
 
 
 async def analyze_node(state: Dict[str, Any]) -> Dict[str, Any]:

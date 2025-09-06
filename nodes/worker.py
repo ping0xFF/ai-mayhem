@@ -10,7 +10,7 @@ from json_storage import get_cursor, set_cursor
 from data_model import save_raw_response, NormalizedEvent
 from mock_tools import fetch_wallet_activity, fetch_lp_activity, web_metrics_lookup
 from real_apis.provider_router import get_wallet_provider
-from .output import formatter
+from .rich_output import formatter
 
 
 async def worker_node(state: Dict[str, Any]) -> Dict[str, Any]:

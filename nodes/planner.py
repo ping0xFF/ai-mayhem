@@ -12,7 +12,7 @@ from .config import (
     CURSOR_STALE_LP, 
     CURSOR_STALE_EXPLORE
 )
-from .output import formatter
+from .rich_output import formatter
 
 
 async def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:

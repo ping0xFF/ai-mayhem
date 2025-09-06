@@ -8,7 +8,7 @@ from typing import Dict, Any
 
 from json_storage import save_json
 from data_model import get_data_model
-from .output import formatter
+from .rich_output import formatter
 
 
 async def memory_node(state: Dict[str, Any]) -> Dict[str, Any]:

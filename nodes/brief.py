@@ -8,7 +8,7 @@ from typing import Dict, Any
 
 from .config import BRIEF_COOLDOWN, BRIEF_THRESHOLD_EVENTS, BRIEF_THRESHOLD_SIGNAL
 from data_model import persist_brief, Artifact
-from .output import formatter
+from .rich_output import formatter
 
 
 async def brief_node(state: Dict[str, Any]) -> Dict[str, Any]:
