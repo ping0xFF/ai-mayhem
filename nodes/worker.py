@@ -10,6 +10,7 @@ from json_storage import get_cursor, set_cursor
 from data_model import save_raw_response, NormalizedEvent
 from mock_tools import fetch_wallet_activity, fetch_lp_activity, web_metrics_lookup
 from real_apis.provider_router import get_wallet_provider
+from .output import formatter
 
 
 async def worker_node(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -23,8 +24,8 @@ async def worker_node(state: Dict[str, Any]) -> Dict[str, Any]:
     if not selected_action:
         return {**state, "events": [], "status": "completed"}
     
-    print(f"  🔧 Worker: Executing {selected_action}...")
     start_time = time.time()
+    formatter.log_node_progress("Worker", f"Executing {selected_action}...")
     
     events = []
     raw_data = {}
@@ -43,7 +44,7 @@ async def worker_node(state: Dict[str, Any]) -> Dict[str, Any]:
             # Get provider router and log selected provider
             router = get_wallet_provider()
             selected_provider = router.get_selected_provider()
-            print(f"    🔍 provider={selected_provider}")
+            formatter.log_node_progress("Worker", f"Using provider: {selected_provider}")
 
             # Fetch wallet activity using provider router
             response = await router.fetch_wallet_activity(
@@ -55,8 +56,13 @@ async def worker_node(state: Dict[str, Any]) -> Dict[str, Any]:
             )
 
             # Determine provider and create appropriate raw_id
-            provider_name = response.get("metadata", {}).get("source", selected_provider)
-            chain = response.get("metadata", {}).get("network", "base")
+            provider_info = response.get("provider", {})
+            if isinstance(provider_info, dict):
+                provider_name = provider_info.get("name", "unknown")
+                chain = provider_info.get("chain", "base")
+            else:
+                provider_name = "bitquery"  # Legacy format
+                chain = "base"
 
             raw_id = f"{provider_name}_wallet_{wallet}_{int(datetime.now().timestamp())}"
 
@@ -149,8 +155,11 @@ async def worker_node(state: Dict[str, Any]) -> Dict[str, Any]:
             await set_cursor("explore_metrics", new_cursor, "Last metrics exploration")
         
         execution_time = time.time() - start_time
-        print(f"    ✅ {selected_action} completed in {execution_time:.2f}s")
-        print(f"    📊 Retrieved {len(events)} events")
+        formatter.log_node_progress(
+            "Worker",
+            f"Retrieved {len(events)} events",
+            execution_time
+        )
         
         return {
             **state,
@@ -162,7 +171,7 @@ async def worker_node(state: Dict[str, Any]) -> Dict[str, Any]:
         }
         
     except Exception as e:
-        print(f"    ❌ {selected_action} failed: {e}")
+        formatter.log_node_progress("Worker", f"Failed: {str(e)}")
         return {
             **state,
             "events": [],

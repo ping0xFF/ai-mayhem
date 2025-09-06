@@ -8,6 +8,7 @@ from typing import Dict, Any
 
 from .config import BRIEF_COOLDOWN, BRIEF_THRESHOLD_EVENTS, BRIEF_THRESHOLD_SIGNAL
 from data_model import persist_brief, Artifact
+from .output import formatter
 
 
 async def brief_node(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -17,8 +18,8 @@ async def brief_node(state: Dict[str, Any]) -> Dict[str, Any]:
     Emits brief only if (new_events ≥ 5 OR max_signal ≥ 0.6) AND cooldown passed.
     Includes optional next_watchlist.
     """
-    print("  📝 Brief: Checking if brief should be emitted...")
     start_time = time.time()
+    formatter.log_node_progress("Brief", "Checking if brief should be emitted...")
     
     # Get current time and last brief time
     current_time = int(datetime.now().timestamp())
@@ -27,8 +28,11 @@ async def brief_node(state: Dict[str, Any]) -> Dict[str, Any]:
     # Check cooldown
     if current_time - last_brief_at < BRIEF_COOLDOWN:
         execution_time = time.time() - start_time
-        print(f"    ⏰ Cooldown not passed ({BRIEF_COOLDOWN/3600:.1f}h remaining)")
-        print(f"    ✅ Brief completed in {execution_time:.2f}s")
+        formatter.log_node_progress(
+            "Brief",
+            f"Cooldown not passed ({BRIEF_COOLDOWN/3600:.1f}h remaining)",
+            execution_time
+        )
         return {
             **state,
             "brief_skipped": True,
@@ -52,8 +56,11 @@ async def brief_node(state: Dict[str, Any]) -> Dict[str, Any]:
     
     if total_events < BRIEF_THRESHOLD_EVENTS and max_general_signal < BRIEF_THRESHOLD_SIGNAL and not lp_threshold_met:
         execution_time = time.time() - start_time
-        print(f"    📉 Low activity: {total_events} events, max general signal {max_general_signal:.2f}, LP score {lp_activity_score:.2f}")
-        print(f"    ✅ Brief completed in {execution_time:.2f}s")
+        formatter.log_node_progress(
+            "Brief",
+            f"Low activity: {total_events} events, max signal {max_general_signal:.2f}",
+            execution_time
+        )
         return {
             **state,
             "brief_skipped": True,
@@ -134,11 +141,12 @@ async def brief_node(state: Dict[str, Any]) -> Dict[str, Any]:
     # Persist to Layer 3
     await persist_brief(artifact)
     
-    print(f"    ✅ Brief emitted: {len(brief_text)} chars")
-    print(f"    📋 Next watchlist: {', '.join(next_watchlist) if next_watchlist else 'none'}")
-    
     execution_time = time.time() - start_time
-    print(f"    ✅ Brief completed in {execution_time:.2f}s")
+    formatter.log_node_progress(
+        "Brief",
+        f"Generated {len(brief_text)} char brief, {len(next_watchlist)} watchlist items",
+        execution_time
+    )
     
     return {
         **state,

@@ -68,13 +68,22 @@ class DiscordNotifier:
         
         if self._webhook is None:
             import aiohttp
-            session = aiohttp.ClientSession()
+            self._session = aiohttp.ClientSession()
             self._webhook = discord.Webhook.from_url(
                 DISCORD_WEBHOOK_URL,
-                session=session
+                session=self._session
             )
         
         return self._webhook
+        
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+        
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        if hasattr(self, '_session'):
+            await self._session.close()
     
     def _create_embed(
         self,
@@ -116,8 +125,8 @@ async def send_discord_notification(title: str, brief_text: str, metadata: Optio
     Returns:
         True if successful, False otherwise
     """
-    notifier = DiscordNotifier()
-    return await notifier.send_brief_notification(title, brief_text, metadata)
+    async with DiscordNotifier() as notifier:
+        return await notifier.send_brief_notification(title, brief_text, metadata)
 
 
 async def test_discord_notification() -> bool:

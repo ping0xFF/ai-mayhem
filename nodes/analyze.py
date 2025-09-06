@@ -8,6 +8,7 @@ from typing import Dict, Any, List
 from collections import Counter
 
 from data_model import normalize_event, NormalizedEvent
+from .output import formatter
 
 
 async def analyze_node(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -16,8 +17,8 @@ async def analyze_node(state: Dict[str, Any]) -> Dict[str, Any]:
     
     Rolls up last 24h counts, identifies top pools, and computes activity signals.
     """
-    print("  📊 Analyze: Processing events and computing signals...")
     start_time = time.time()
+    formatter.log_node_progress("Analyze", "Processing events and computing signals...")
     
     events = state.get("events", [])
     if not events:
@@ -167,25 +168,12 @@ async def analyze_node(state: Dict[str, Any]) -> Dict[str, Any]:
         **wallet_signals  # Include wallet-specific signals
     }
     
-    print(f"    📈 24h events: {total_events}")
-    print(f"    🏊 Top pools: {', '.join(top_pools[:3])}")
-    print(f"    📊 Signals: volume={volume_signal:.2f}, activity={activity_signal:.2f}")
-    
-    # Print LP-specific signals if available
-    if lp_signals:
-        print(f"    💧 LP Signals: net_delta={lp_signals.get('net_liquidity_delta_24h', 0)}, "
-              f"churn_rate={lp_signals.get('lp_churn_rate_24h', 0):.2f}, "
-              f"activity_score={lp_signals.get('pool_activity_score', 0):.2f}")
-
-    # Print wallet-specific signals if available
-    if wallet_signals:
-        net_lp_usd = wallet_signals.get('net_lp_usd_24h', 0)
-        new_pools = wallet_signals.get('new_pools_touched_24h', [])
-        print(f"    👛 Wallet Signals: net_lp_usd_24h=${net_lp_usd:.2f}, "
-              f"new_pools_touched_24h={len(new_pools)} pools")
-    
-    execution_time = time.time() - start_time
-    print(f"    ✅ Analyze completed in {execution_time:.2f}s")
+    # Log progress
+    formatter.log_node_progress(
+        "Analyze",
+        f"Processed {total_events} events, computed {len(signals)} signals",
+        time.time() - start_time
+    )
     
     return {
         **state,

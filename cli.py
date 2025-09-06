@@ -9,9 +9,12 @@ logging, type safety, and structured configuration.
 import sys
 import asyncio
 import argparse
+import time
 from typing import NoReturn, Optional
+from datetime import datetime
 
 from nodes.config import DEBUG, is_discord_enabled
+from nodes.rich_output import formatter
 from agent import LangGraphAgent
 
 
@@ -27,13 +30,8 @@ async def run_wallet_brief_mode() -> int:
     Returns:
         Exit code: 0 for success, 1 for failure
     """
-    import time
-    from datetime import datetime
-    
-    print("🚀 AI Mayhem - Wallet Brief Mode")
-    print("=" * 50)
-    
     start_time = time.time()
+    agent = None
     
     try:
         # Create agent instance
@@ -43,13 +41,10 @@ async def run_wallet_brief_mode() -> int:
         thread_id = f"wallet_brief_{int(datetime.now().timestamp())}"
         goal = "Execute single wallet reconnaissance and brief generation"
         
-        print(f"📅 Started at: {datetime.now().isoformat()}")
-        print(f"🔗 Thread ID: {thread_id}")
-        print()
+        # Initialize output
+        formatter.start_execution(thread_id)
         
         # Run the complete flow once
-        print("🔄 Executing Budget → Planner → Worker → Analyze → Brief → Memory...")
-        
         final_state = await agent.run(goal, thread_id)
         
         execution_time = time.time() - start_time
@@ -69,33 +64,30 @@ async def run_wallet_brief_mode() -> int:
         if provider == 'unknown':
             provider = final_state.get('provider', 'unknown')
         
-        # Log provider information as required
-        print(f"🔍 provider={provider}")
-        print(f"⚡ action={selected_action}")
-        print(f"📊 status={status}")
-        print(f"⏱️  execution_time={execution_time:.2f}s")
-        print(f"💰 budget_used=${spent_today:.4f}")
+        # Update execution data
+        formatter.update_execution_data(
+            provider=provider,
+            action=selected_action,
+            status=status,
+            duration=execution_time,
+            budget_used=spent_today,
+            events_24h=final_state.get('last24h_counts', {}).get('total', 0),
+            top_pools=final_state.get('top_pools', []),
+            signals=final_state.get('signals', {}),
+            brief_text=final_state.get('brief_text'),
+            brief_skipped=final_state.get('brief_skipped', False),
+            skip_reason=final_state.get('reason')
+        )
         
-        # Check if brief was emitted
-        brief_text = final_state.get('brief_text')
-        brief_skipped = final_state.get('brief_skipped', False)
-        skip_reason = final_state.get('reason', 'unknown')
-        
-        if brief_text and not brief_skipped:
-            print("\n📝 Brief Generated:")
-            print("-" * 30)
-            print(brief_text)
-            print("-" * 30)
-            
-            # Send Discord notification if enabled
+        # Handle Discord notification if brief was generated
+        if final_state.get('brief_text') and not final_state.get('brief_skipped', False):
             if is_discord_enabled():
-                print("\n📤 Sending Discord notification...")
                 from discord_notifier import send_discord_notification
                 
                 try:
                     success = await send_discord_notification(
                         title="AI Mayhem Brief",
-                        brief_text=brief_text,
+                        brief_text=final_state['brief_text'],
                         metadata={
                             'provider': provider,
                             'action': selected_action,
@@ -105,60 +97,69 @@ async def run_wallet_brief_mode() -> int:
                         }
                     )
                     
-                    if success:
-                        print("✅ Discord notification sent successfully")
-                    else:
-                        print("❌ Failed to send Discord notification")
+                    formatter.update_execution_data(
+                        notifications=[
+                            "Discord: Notification sent successfully" if success else
+                            "Discord: Failed to send notification"
+                        ]
+                    )
                 except Exception as e:
-                    print(f"❌ Discord notification error: {e}")
+                    formatter.update_execution_data(
+                        notifications=[f"Discord: Error - {str(e)}"]
+                    )
             else:
-                print("📵 Discord notifications disabled (no DISCORD_WEBHOOK_URL)")
+                formatter.update_execution_data(
+                    notifications=["Discord: Notifications disabled (no webhook configured)"]
+                )
         
-        elif brief_skipped:
-            print(f"\n⏭️  Brief skipped: {skip_reason}")
-            print("   (Brief gating conditions not met)")
-        else:
-            print("\n📵 No brief generated")
-        
-        print(f"\n✅ Wallet brief mode completed in {execution_time:.2f}s")
+        # Print final summary
+        formatter.print_final_summary()
         return 0
         
     except Exception as e:
         execution_time = time.time() - start_time
-        print(f"\n❌ Error in wallet brief mode: {str(e)}")
-        print(f"⏱️  Failed after {execution_time:.2f}s")
+        print(f"\nError in wallet brief mode: {str(e)}")
+        print(f"Failed after {execution_time:.2f}s")
         if DEBUG:
             import traceback
             traceback.print_exc()
         return 1
+        
+    finally:
+        if agent:
+            await agent.close()  # Close the database connection
 
 
 async def run_legacy_mode(args: argparse.Namespace) -> None:
     """Run legacy CLI commands."""
     agent = LangGraphAgent()
     
-    if args.list:
-        threads = agent.list_threads()
-        print("Available threads:")
-        for thread in threads:
-            print(f"  - {thread}")
-        return
-    
-    if args.resume:
-        final_state = await agent.resume(args.thread)
-        if final_state:
-            status = final_state.get('status', 'unknown')
-            print(f"Resumed thread '{args.thread}' - Final status: {status}")
-        else:
-            print(f"No thread found with ID: {args.thread}")
-        return
-    
-    if not args.goal:
-        raise CLIError("--goal is required when not resuming")
-    
-    final_state = await agent.run(args.goal, args.thread)
-    status = final_state.get('status', 'unknown')
-    print(f"Completed with status: {status}")
+    try:
+        if args.list:
+            threads = agent.list_threads()
+            print("Available threads:")
+            for thread in threads:
+                print(f"  - {thread}")
+            return
+        
+        if args.resume:
+            final_state = await agent.resume(args.thread)
+            if final_state:
+                status = final_state.get('status', 'unknown')
+                print(f"Resumed thread '{args.thread}' - Final status: {status}")
+            else:
+                print(f"No thread found with ID: {args.thread}")
+            return
+        
+        if not args.goal:
+            raise CLIError("--goal is required when not resuming")
+        
+        final_state = await agent.run(args.goal, args.thread)
+        status = final_state.get('status', 'unknown')
+        print(f"Completed with status: {status}")
+        
+    finally:
+        await agent.close()  # Close the database connection
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -225,14 +226,14 @@ async def main() -> NoReturn:
         await run_legacy_mode(args)
         
     except CLIError as e:
-        print(f"❌ {e}")
+        print(f"Error: {e}")
         parser.print_help()
         sys.exit(1)
     except KeyboardInterrupt:
-        print("\n👋 Interrupted by user")
+        print("\nInterrupted by user")
         sys.exit(130)
     except Exception as e:
-        print(f"❌ Unexpected error: {e}")
+        print(f"Unexpected error: {e}")
         if DEBUG:
             import traceback
             traceback.print_exc()

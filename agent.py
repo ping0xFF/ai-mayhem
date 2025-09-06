@@ -237,34 +237,37 @@ Be specific about what was done and any important findings or results.
 
 def budget_node(state: AgentState) -> AgentState:
     """Check if we've exceeded the daily budget."""
+    from nodes.output import formatter
+    
     # Check if we need to reset spent_today for a new day
     state = _reset_spent_if_new_day(state)
     
     budget_daily = os.getenv("BUDGET_DAILY")
     if budget_daily is None:
-        print("❌ ERROR: BUDGET_DAILY environment variable not found!")
-        print("   Please add BUDGET_DAILY=2.00 to your .env file")
-        print("   Example: echo 'BUDGET_DAILY=2.00' >> .env")
+        print("ERROR: BUDGET_DAILY environment variable not found!")
+        print("Please add BUDGET_DAILY=2.00 to your .env file")
+        print("Example: echo 'BUDGET_DAILY=2.00' >> .env")
         sys.exit(1)
     
     try:
         cap = float(budget_daily)
     except ValueError:
-        print(f"❌ ERROR: Invalid BUDGET_DAILY value: '{budget_daily}'")
-        print("   Please set BUDGET_DAILY to a valid number (e.g., 2.00)")
+        print(f"ERROR: Invalid BUDGET_DAILY value: '{budget_daily}'")
+        print("Please set BUDGET_DAILY to a valid number (e.g., 2.00)")
         sys.exit(1)
     
     spent = state.get("spent_today", 0.0)
     
-    print(f"  Budget check: ${spent:.2f}/${cap:.2f}")
+    # Log budget check start
+    formatter.log_node_progress("Budget", f"Checking limits (${spent:.2f}/${cap:.2f})")
     
     if spent >= cap:
         state["status"] = "capped"  # Use distinct status for budget cap
         state["messages"].append(f"Budget cap hit: ${spent:.2f}/{cap:.2f}")
-        print(f"    Budget exceeded: ${spent:.2f}/${cap:.2f}")
+        formatter.log_node_progress("Budget", f"Exceeded: ${spent:.2f}/${cap:.2f}")
     else:
         state["status"] = "planning"  # Continue to new planner
-        print(f"    Budget OK, continuing to new planner")
+        formatter.log_node_progress("Budget", "OK - continuing to planner")
     
     return state
 
@@ -465,8 +468,7 @@ class LangGraphAgent:
             goal: The goal for the agent to work toward
             thread_id: Unique identifier for this conversation thread
         """
-        print(f"Starting agent with goal: {goal}")
-        print(f"Using thread ID: {thread_id}")
+        # Progress is now handled by the output formatter
         
         # Set up checkpointer
         await self._get_checkpointer()
@@ -502,7 +504,7 @@ class LangGraphAgent:
             async for state in self.app.astream(initial_state, config=config):
                 # state is a dict with node name as key
                 for node_name, node_state in state.items():
-                    print(f"  Completed node: {node_name}")
+                    # Node completion is now handled by the output formatter
                     final_state = node_state
             
             return final_state
@@ -534,7 +536,7 @@ class LangGraphAgent:
             final_state = None
             async for state in self.app.astream(None, config=config):
                 for node_name, node_state in state.items():
-                    print(f"  Completed node: {node_name}")
+                    # Node completion is now handled by the output formatter
                     final_state = node_state
             
             return final_state

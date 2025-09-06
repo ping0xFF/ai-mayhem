@@ -9,4 +9,4 @@ aiosqlite
 alchemy-sdk
 dataclass-wizard
 aiohttp>=3.8.0
-discord.py>=2.3.0
+discord.py>=2.3.0rich>=13.7.0

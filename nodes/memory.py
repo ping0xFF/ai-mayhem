@@ -8,6 +8,7 @@ from typing import Dict, Any
 
 from json_storage import save_json
 from data_model import get_data_model
+from .output import formatter
 
 
 async def memory_node(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -16,12 +17,12 @@ async def memory_node(state: Dict[str, Any]) -> Dict[str, Any]:
     
     Stores brief text, derived metrics, and updates cursors for next run.
     """
-    print("  💾 Memory: Persisting final artifacts...")
     start_time = time.time()
+    formatter.log_node_progress("Memory", "Persisting final artifacts...")
     
     # Store brief if it was emitted (already done in brief node via Layer 3)
     if "brief_text" in state:
-        print(f"    ✅ Brief already persisted to Layer 3")
+        formatter.log_node_progress("Memory", "Brief already persisted to Layer 3")
     
     # Store derived metrics (legacy, for backward compatibility)
     if "signals" in state:
@@ -32,7 +33,7 @@ async def memory_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "top_pools": state.get("top_pools", []),
             "timestamp": int(datetime.now().timestamp())
         })
-        print(f"    ✅ Stored legacy metrics: {metrics_id}")
+        formatter.log_node_progress("Memory", f"Stored legacy metrics: {metrics_id}")
     
     # Update cursors in state for next run
     current_time = int(datetime.now().timestamp())
@@ -49,10 +50,12 @@ async def memory_node(state: Dict[str, Any]) -> Dict[str, Any]:
     elif selected_action == "explore_metrics":
         cursors["explore_metrics"] = current_time
     
-    print(f"    ✅ Updated cursors for next run")
-    
     execution_time = time.time() - start_time
-    print(f"    ✅ Memory completed in {execution_time:.2f}s")
+    formatter.log_node_progress(
+        "Memory",
+        "Updated cursors for next run",
+        execution_time
+    )
     
     return {
         **state,

@@ -12,6 +12,7 @@ from .config import (
     CURSOR_STALE_LP, 
     CURSOR_STALE_EXPLORE
 )
+from .output import formatter
 
 
 async def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -24,15 +25,17 @@ async def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
     - Else: explore_metrics once per day (cooldown)
     - Hard stop if budget gate failed
     """
-    print("  📋 Planner: Selecting next action...")
     start_time = time.time()
     
     # Check budget first
     spent = state.get("spent_today", 0.0)
     if spent >= BUDGET_DAILY:
         execution_time = time.time() - start_time
-        print(f"    Budget exceeded: ${spent:.2f}/${BUDGET_DAILY:.2f}")
-        print(f"    ✅ Planner completed in {execution_time:.2f}s")
+        formatter.log_node_progress(
+            "Planner",
+            f"Budget exceeded: ${spent:.2f}/${BUDGET_DAILY:.2f}",
+            execution_time
+        )
         return {**state, "status": "capped"}
     
     # Get current cursors
@@ -45,8 +48,11 @@ async def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
             wallet = cursor_key.split(":", 1)[1]
             if current_time - cursor_ts > CURSOR_STALE_WALLET:
                 execution_time = time.time() - start_time
-                print(f"    Wallet cursor stale for {wallet} (>2h)")
-                print(f"    ✅ Planner completed in {execution_time:.2f}s")
+                formatter.log_node_progress(
+                    "Planner",
+                    f"Selected wallet_recon (cursor stale >2h for {wallet})",
+                    execution_time
+                )
                 return {
                     **state,
                     "selected_action": "wallet_recon",
@@ -58,8 +64,11 @@ async def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
     lp_cursor = cursors.get("lp", 0)
     if current_time - lp_cursor > CURSOR_STALE_LP:
         execution_time = time.time() - start_time
-        print("    LP cursor stale (>6h)")
-        print(f"    ✅ Planner completed in {execution_time:.2f}s")
+        formatter.log_node_progress(
+            "Planner",
+            "Selected lp_recon (cursor stale >6h)",
+            execution_time
+        )
         return {
             **state,
             "selected_action": "lp_recon",
@@ -70,8 +79,11 @@ async def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
     explore_cursor = cursors.get("explore_metrics", 0)
     if current_time - explore_cursor > CURSOR_STALE_EXPLORE:
         execution_time = time.time() - start_time
-        print("    Explore metrics cursor stale (>24h)")
-        print(f"    ✅ Planner completed in {execution_time:.2f}s")
+        formatter.log_node_progress(
+            "Planner",
+            "Selected explore_metrics (cursor stale >24h)",
+            execution_time
+        )
         return {
             **state,
             "selected_action": "explore_metrics",
@@ -80,6 +92,9 @@ async def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
     
     # All cursors fresh - no action needed
     execution_time = time.time() - start_time
-    print("    All cursors fresh - no action needed")
-    print(f"    ✅ Planner completed in {execution_time:.2f}s")
+    formatter.log_node_progress(
+        "Planner",
+        "All cursors fresh - no action needed",
+        execution_time
+    )
     return {**state, "status": "completed"}

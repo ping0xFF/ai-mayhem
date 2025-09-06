@@ -24,7 +24,14 @@ BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "agent_state.db"
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('data_model.log'),  # Log to file
+        logging.StreamHandler()  # Also log to console for critical messages
+    ]
+)
 logger = logging.getLogger(__name__)
 
 
@@ -153,7 +160,7 @@ class ThreeLayerDataModel:
             """, (response_id, source, raw_json, provenance_json))
             
             await conn.commit()
-            logger.info(f"Saved raw response: {response_id} from {source}")
+            logger.debug(f"Saved raw response: {response_id} from {source}")
             return response_id
             
         finally:
@@ -202,7 +209,7 @@ class ThreeLayerDataModel:
             ))
             
             await conn.commit()
-            logger.info(f"Normalized event: {event.event_id} ({event.event_type})")
+            logger.debug(f"Normalized event: {event.event_id} ({event.event_type})")
             return event.event_id
             
         finally:
@@ -296,7 +303,7 @@ class ThreeLayerDataModel:
             ))
             
             await conn.commit()
-            logger.info(f"Persisted artifact: {artifact.artifact_id}")
+            logger.debug(f"Persisted artifact: {artifact.artifact_id}")
             return artifact.artifact_id
             
         finally:
