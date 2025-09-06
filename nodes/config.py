@@ -1,5 +1,5 @@
 """
-Shared configuration for all nodes.
+Shared configuration for all nodes and application settings.
 """
 
 import os
@@ -7,6 +7,11 @@ from datetime import timedelta
 
 # Budget configuration
 BUDGET_DAILY = float(os.getenv("BUDGET_DAILY", "5.0"))
+
+# API configuration
+WALLET_RECON_SOURCE = os.getenv("WALLET_RECON_SOURCE", "alchemy")
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
+DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
 # Cursor staleness thresholds
 CURSOR_STALE_WALLET = 2 * 3600      # 2 hours
@@ -24,3 +29,13 @@ WORKER_TIMEOUT = 20     # seconds
 ANALYZE_TIMEOUT = 15    # seconds
 BRIEF_TIMEOUT = 10      # seconds
 MEMORY_TIMEOUT = 10     # seconds
+
+# Helper functions
+def is_discord_enabled() -> bool:
+    """Check if Discord notifications are enabled."""
+    return DISCORD_WEBHOOK_URL is not None
+
+def validate_wallet_source(source: str) -> bool:
+    """Validate wallet reconnaissance source."""
+    valid_sources = ['alchemy', 'covalent', 'bitquery', 'mock']
+    return source in valid_sources

@@ -225,37 +225,168 @@ python demos/wallet_recon_live.py       # Live wallet recon (Bitquery/Covalent)
 
 **Swap Pattern**: Replace `from mock_tools import fetch_wallet_activity` with `from real_apis.alchemy_provider import fetch_wallet_activity_alchemy_live` for production use.
 
-## 🔧 Configuration
+## 🔧 Configuration Architecture
 
-### Cursor Staleness Thresholds
-```python
-CURSOR_STALE_WALLET = 2 * 3600    # 2 hours
-CURSOR_STALE_LP = 6 * 3600        # 6 hours  
-CURSOR_STALE_EXPLORE = 24 * 3600  # 24 hours
+AI Mayhem uses **multiple configuration systems** for different purposes. This section explains each system and when to use which approach.
+
+### **Configuration Systems Overview**
+
+| File | Purpose | Scope | Format | When to Use |
+|------|---------|-------|--------|-------------|
+| `/config.yaml` | LiteLLM proxy settings | AI models, rate limits, budgets | YAML | LiteLLM server configuration |
+| `/nodes/config.py` | All application settings | API keys, timeouts, thresholds, notifications | Python constants | All configuration |
+| Environment Variables | Runtime configuration | API keys, debug flags | Shell exports | Production secrets |
+
+### **1. LiteLLM Configuration (`/config.yaml`)**
+
+**Purpose**: Configures the LiteLLM proxy server for AI model access.
+
+**Location**: Root directory *(required by LiteLLM convention)*
+
+**What it controls**:
+- Available AI models (Claude variants)
+- Rate limits (RPM/TPM)
+- Model-specific budgets
+- Request logging
+
+```yaml
+model_list:
+  - model_name: anthropic/claude-3-haiku-20240307
+    rpm: 60
+    tpm: 200000
+general_settings:
+  daily_budget: 1
+  default_model: anthropic/claude-3-haiku-20240307
 ```
 
-### Brief Gating
+**When to modify**: When adding new AI models or changing rate limits.
+
+### **2. Node Configuration (`/nodes/config.py`)**
+
+**Purpose**: Defines timing constants and thresholds for node behavior.
+
+**Location**: `/nodes/` directory *(co-located with node implementations)*
+
+**What it controls**:
+- Cursor staleness thresholds
+- Brief gating thresholds  
+- Node execution timeouts
+- LP activity scoring
+
 ```python
-BRIEF_COOLDOWN = 6 * 3600         # 6 hours
-BRIEF_THRESHOLD_EVENTS = 5        # Minimum events
-BRIEF_THRESHOLD_SIGNAL = 0.6      # Minimum signal strength
+CURSOR_STALE_WALLET = 2 * 3600      # 2 hours
+BRIEF_THRESHOLD_EVENTS = 5          # Minimum events
+PLANNER_TIMEOUT = 10                # seconds
 ```
 
-### LP-Specific Configuration
-```python
-LP_ACTIVITY_THRESHOLD = 0.6       # LP activity score threshold for brief emission
-LP_CHURN_THRESHOLD = 0.8          # LP churn rate for high activity detection
-LP_ACTIVITY_SCORE_MAX = 1.0       # Maximum LP activity score (5+ events)
+**When to modify**: When tuning node behavior, timing, or thresholds.
+
+### **3. Environment Variables (Runtime)**
+
+**Purpose**: Runtime configuration and secrets that vary by deployment.
+
+**Location**: Shell environment, `.env` files, deployment configs
+
+**What it controls**:
+- API keys and secrets
+- Environment-specific overrides
+- Debug flags
+- Deployment-specific URLs
+
+```bash
+# Required for production
+export ALCHEMY_API_KEY="your_key_here"
+export WALLET_RECON_SOURCE="alchemy"
+export BUDGET_DAILY="5.0"
+
+# Optional features
+export DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/..."
+export DEBUG="false"
 ```
 
-### Per-Node Timeouts
-```python
-PLANNER_TIMEOUT = 10   # seconds
-WORKER_TIMEOUT = 20    # seconds
-ANALYZE_TIMEOUT = 15   # seconds
-BRIEF_TIMEOUT = 10     # seconds
-MEMORY_TIMEOUT = 10    # seconds
+**When to modify**: When deploying to different environments or rotating secrets.
+
+### **Configuration Hierarchy & Precedence**
+
 ```
+Environment Variables (highest precedence)
+    ↓ (overrides)
+Node Constants (/nodes/config.py)
+    ↓ (separate system)
+LiteLLM Config (/config.yaml)
+```
+
+### **Why Files Are Located Where They Are**
+
+- **`/config.yaml` in root**: LiteLLM expects it there by convention
+- **`/nodes/config.py`**: Centralized configuration for all application settings
+- **Environment variables**: External to codebase, set at deployment time
+
+### **Common Configuration Tasks**
+
+#### **Adding a New API Provider**
+1. Add to `validate_wallet_source()` function in `/nodes/config.py`
+2. Add environment variable: `YOUR_PROVIDER_API_KEY`
+3. Update documentation in this README
+
+#### **Changing Brief Thresholds**
+1. Modify constants in `/nodes/config.py`
+2. Update tests in `/tests/test_lp_brief_gating.py`
+3. Document changes in deployment notes
+
+#### **Adding New Environment Variables**
+1. Add to `/nodes/config.py` with `os.getenv()`
+2. Add to environment variable list in production documentation
+3. Document in this README
+
+#### **Modifying AI Model Settings**
+1. Edit `/config.yaml` model list
+2. Restart LiteLLM proxy server
+3. No code changes needed
+
+### **Development vs Production Configuration**
+
+#### **Development Setup**:
+```bash
+# Minimal setup for development
+export WALLET_RECON_SOURCE="mock"  # Use mock data
+export DEBUG="true"                # Enable debug logging
+export BUDGET_DAILY="1.0"          # Lower budget for testing
+```
+
+#### **Production Setup**:
+```bash
+# Full production configuration
+export ALCHEMY_API_KEY="prod_key"
+export DISCORD_WEBHOOK_URL="https://discord.com/..."
+export WALLET_RECON_SOURCE="alchemy"
+export BUDGET_DAILY="5.0"
+export DEBUG="false"
+```
+
+### **Configuration Validation**
+
+The application validates configuration at startup:
+
+- **Type checking**: Budget values must be positive numbers
+- **URL validation**: Discord webhooks must be valid Discord URLs  
+- **Source validation**: Wallet recon source must be a supported provider
+- **Required fields**: Critical API keys are checked for presence
+
+**Error example**:
+```
+❌ Configuration error: wallet_recon_source must be one of ['alchemy', 'covalent', 'bitquery', 'mock']
+```
+
+### **Migration Notes**
+
+**Legacy Environment Variables** (deprecated but still supported):
+- `BITQUERY_LIVE=1` → Use `BITQUERY_ACCESS_TOKEN=your_token` instead
+
+**Future Improvements** (see Code Quality Standards section):
+- Add configuration file support (YAML/TOML)
+- Implement configuration hot-reloading
+- Add configuration schema validation
 
 ## 🧪 Testing & Verification
 
@@ -725,4 +856,176 @@ curl -X GET \
 
 ### 🔍 **Technical Analysis: Why Page-Based Endpoint Wins**
 
+The page-based endpoint achieves 89x size reduction while maintaining full transaction data, making it the optimal choice for production wallet reconnaissance.
+
+```
+
+---
+
+## 🚀 **Code Quality Standards & Future Improvements**
+
+### **Production-Grade Code Standards**
+
+This section outlines the coding standards and improvements needed to evolve this project from a proof-of-concept to production-ready software.
+
+#### **🏗️ Architecture & Structure**
+- **Proper Package Structure**: Migrate to `src/ai_mayhem/` package structure with proper `__init__.py` files
+- **Dependency Injection**: Explicit dependencies instead of hidden global state
+- **Configuration Management**: Centralized config class with validation instead of scattered `os.getenv()` calls
+- **Focused Functions**: Single responsibility principle - break large functions into smaller, testable units
+
+#### **🔒 Type Safety & Validation**
+- **Comprehensive Type Hints**: Every function, method, and variable should have proper type annotations
+- **Input Validation**: Validate all external inputs (API responses, user inputs, environment variables)
+- **Custom Exception Types**: Specific exceptions for different error conditions instead of generic `Exception`
+- **Pydantic Models**: Use Pydantic for data validation and serialization
+
+#### **📊 Monitoring & Observability**
+- **Structured Logging**: Replace `print()` statements with proper logging using `structlog` or similar
+- **Metrics Collection**: Add Prometheus metrics for production monitoring
+- **Health Checks**: Implement health check endpoints for deployment readiness
+- **Distributed Tracing**: Add OpenTelemetry for request tracing across components
+
+#### **🧪 Testing & Quality**
+- **Test Coverage**: Aim for >90% test coverage with meaningful tests
+- **Integration Tests**: Test real API interactions, not just mocked unit tests
+- **Performance Tests**: Benchmark critical paths and set performance budgets
+- **Contract Testing**: Verify API contract compatibility
+
+#### **🔐 Security & Reliability**
+- **Secrets Management**: Use proper secrets management instead of environment variables
+- **Rate Limiting**: Implement client-side rate limiting for external APIs
+- **Input Sanitization**: Sanitize all inputs to prevent injection attacks
+- **Error Recovery**: Graceful degradation and retry strategies
+
+#### **📈 Performance & Scalability**
+- **Connection Pooling**: Reuse HTTP connections and database connections
+- **Caching Strategy**: Implement intelligent caching for expensive operations
+- **Async Best Practices**: Proper async/await patterns without blocking
+- **Resource Management**: Proper cleanup of resources and memory management
+
+#### **📚 Documentation & Maintenance**
+- **API Documentation**: Auto-generated API docs with examples
+- **Architecture Decision Records**: Document key architectural decisions
+- **Deployment Guides**: Comprehensive deployment and operations documentation
+- **Code Comments**: Explain *why*, not *what* - focus on business logic and complex algorithms
+
+### **🎯 Priority Improvements**
+
+#### **Phase 1: Foundation (1-2 weeks)**
+1. **Package Structure**: Reorganize into proper Python package
+2. **Type Hints**: Add comprehensive type annotations
+3. **Logging**: Replace all `print()` with structured logging
+4. **Configuration**: Create centralized config management
+
+#### **Phase 2: Reliability (2-3 weeks)**
+5. **Error Handling**: Implement proper exception hierarchy
+6. **Input Validation**: Add validation for all external inputs
+7. **Testing**: Achieve >80% test coverage
+8. **Documentation**: Complete API documentation
+
+#### **Phase 3: Production (3-4 weeks)**
+9. **Monitoring**: Add metrics and health checks
+10. **Security**: Implement secrets management
+11. **Performance**: Add caching and connection pooling
+12. **Deployment**: Create production deployment pipeline
+
+### **🔄 Continuous Improvement**
+
+- **Code Reviews**: All changes require peer review
+- **Automated Quality Gates**: Pre-commit hooks, linting, type checking
+- **Performance Monitoring**: Track and alert on performance regressions
+- **Security Scanning**: Regular dependency and code security scans
+
+---
+
+## 🚀 **Run in Production**
+
+### **Wallet Brief Mode**
+
+Execute a single reconnaissance cycle and exit - perfect for cron jobs and automated monitoring.
+
+```bash
+# Run once and exit
+python -m ai_mayhem.cli run --mode=wallet-brief
+
+# With Discord notifications
+export DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/your_webhook_id/your_webhook_token"
+python -m ai_mayhem.cli run --mode=wallet-brief
+```
+
+### **Cron Job Setup**
+
+```bash
+# Edit crontab
+crontab -e
+
+# Add entry for every 30 minutes
+*/30 * * * * cd /path/to/ai-mayhem && /usr/bin/python3 -m ai_mayhem.cli run --mode=wallet-brief >> /var/log/ai-mayhem.log 2>&1
+```
+
+### **Systemd Service**
+
+Create `/etc/systemd/system/ai-mayhem-brief.service`:
+
+```ini
+[Unit]
+Description=AI Mayhem Wallet Brief
+After=network.target
+
+[Service]
+Type=oneshot
+User=ai-mayhem
+WorkingDirectory=/path/to/ai-mayhem
+ExecStart=/usr/bin/python3 -m ai_mayhem.cli run --mode=wallet-brief
+Environment=ALCHEMY_API_KEY=your_key
+Environment=DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/your_webhook_id/your_webhook_token
+Environment=BUDGET_DAILY=5.0
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Create timer `/etc/systemd/system/ai-mayhem-brief.timer`:
+
+```ini
+[Unit]
+Description=Run AI Mayhem Brief every 30 minutes
+Requires=ai-mayhem-brief.service
+
+[Timer]
+OnCalendar=*:0/30
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+Enable and start:
+```bash
+sudo systemctl enable ai-mayhem-brief.timer
+sudo systemctl start ai-mayhem-brief.timer
+sudo systemctl status ai-mayhem-brief.timer
+```
+
+### **Environment Variables**
+
+Required environment variables for production:
+
+```bash
+# API Keys
+ALCHEMY_API_KEY=your_alchemy_key
+COVALENT_API_KEY=your_covalent_key
+BITQUERY_ACCESS_TOKEN=your_bitquery_key
+
+# Configuration
+WALLET_RECON_SOURCE=alchemy
+BUDGET_DAILY=5.0
+
+# Optional notifications
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/your_webhook_id/your_webhook_token
+
+# Optional debugging
+BITQUERY_VERBOSE=false
+DEBUG=false
 ```
