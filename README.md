@@ -667,16 +667,44 @@ This project now includes **comprehensive LP (Liquidity Provider) monitoring** c
 - **Pool Activity Score**: Activity heuristic based on event volume
 - **Net Liquidity Value**: Token-value weighted LP movements
 
+### LLM-Backed Briefs
+- **Multiple Modes**: Choose between deterministic, LLM, or both
+  - `BRIEF_MODE=deterministic`: Traditional rule-based briefs
+  - `BRIEF_MODE=llm`: AI-powered insights with structured validation
+  - `BRIEF_MODE=both`: Both deterministic and LLM briefs
+- **Token Management**: Smart event reduction to fit context limits
+  - `LLM_INPUT_POLICY=full`: Use all events (may exceed token cap)
+  - `LLM_INPUT_POLICY=budgeted`: Reduce events to fit token cap
+  - `LLM_TOKEN_CAP=120000`: Maximum tokens for LLM input
+- **Structured Output**: Machine-readable fields for automation
+  - `summary_text_llm`: Natural language brief from LLM
+  - `llm_struct`: Structured data (top wallets, notable events, etc.)
+  - `llm_validation`: Cross-checks against deterministic rollups
+  - `llm_model`: Model used for generation
+  - `llm_tokens`: Token usage tracking
+
 ### Enhanced Brief Generation
 - **LP Heatmap**: Automatic inclusion of high-activity pools in watchlists
 - **LP Threshold Gating**: Briefs emit when `pool_activity_score >= 0.6`
 - **LP-Specific Content**: Detailed LP metrics in brief summaries
 - **Provenance Tracking**: Full traceability from brief → events → raw data
+- **LLM-Backed Briefs**: AI-powered insights with structured validation
+  - **Multiple Modes**: Choose between deterministic, LLM, or both
+  - **Token Management**: Smart event reduction to fit context limits
+  - **Structured Output**: Machine-readable fields for automation
+  - **Self-Validation**: Cross-checks against deterministic rollups
 
 ### Demo & Testing
 ```bash
 # 🏆 Complete LP monitoring demonstration
 python demos/lp_e2e_demo.py
+
+# 🤖 LLM-backed brief demonstration
+python demos/llm_brief_demo.py          # Shows all brief modes and token management
+# - Demonstrates deterministic, LLM, and both modes
+# - Shows token management with full/budgeted policies
+# - Includes error handling and validation
+# - Verifies persistence and provenance
 
 # 🔥 Live Bitquery wallet reconnaissance (requires API key)
 python demos/wallet_recon_live.py       # Live wallet activity demo
@@ -684,6 +712,7 @@ python demos/wallet_recon_live.py       # Live wallet activity demo
 # LP-specific test suites
 python tests/test_enhanced_lp.py        # Core LP functionality
 python tests/test_lp_brief_gating.py    # LP brief gating logic
+python tests/test_llm_brief.py          # LLM brief functionality
 
 # Wallet Recon demos
 python demos/covalent_demo.py           # 🆕 Covalent wallet recon demo
@@ -1021,6 +1050,13 @@ BITQUERY_ACCESS_TOKEN=your_bitquery_key
 # Configuration
 WALLET_RECON_SOURCE=alchemy
 BUDGET_DAILY=5.0
+
+# Brief modes
+BRIEF_MODE=both                                     # deterministic | llm | both
+LLM_INPUT_POLICY=full                              # full | budgeted
+LLM_TOKEN_CAP=120000                               # Maximum tokens for LLM input
+LLM_BRIEF_MODEL=anthropic/claude-3-haiku-20240307  # Dev default (cheaper)
+# LLM_BRIEF_MODEL=anthropic/claude-3-5-sonnet-20241022  # Prod (better quality)
 
 # Optional notifications
 DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/your_webhook_id/your_webhook_token

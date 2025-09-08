@@ -58,6 +58,12 @@ class Artifact:
     next_watchlist: List[str]  # Suggested items to watch
     source_ids: List[str]  # Points back to scratch JSON rows
     event_count: int  # Number of events processed
+    # LLM brief fields
+    summary_text_llm: Optional[str] = None  # Free-form natural-language brief from LLM
+    llm_struct: Optional[Dict[str, Any]] = None  # Machine-readable structured fields
+    llm_validation: Optional[Dict[str, Any]] = None  # LLM's self-checks vs deterministic rollups
+    llm_model: Optional[str] = None  # The gateway model alias actually used
+    llm_tokens: Optional[int] = None  # Total tokens consumed for this brief
 
 
 class ThreeLayerDataModel:
@@ -124,6 +130,17 @@ class ThreeLayerDataModel:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        
+        # Add LLM fields if they don't exist
+        try:
+            await conn.execute("ALTER TABLE artifacts ADD COLUMN summary_text_llm TEXT")  # LLM-generated brief
+            await conn.execute("ALTER TABLE artifacts ADD COLUMN llm_struct TEXT")  # JSON string for structured fields
+            await conn.execute("ALTER TABLE artifacts ADD COLUMN llm_validation TEXT")  # JSON string for validation results
+            await conn.execute("ALTER TABLE artifacts ADD COLUMN llm_model TEXT")  # Model alias used
+            await conn.execute("ALTER TABLE artifacts ADD COLUMN llm_tokens INTEGER")  # Token usage
+        except:
+            # Columns already exist, ignore
+            pass
         
         # Create indexes for performance
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_events_wallet_ts ON normalized_events(wallet, timestamp)")
@@ -283,6 +300,40 @@ class ThreeLayerDataModel:
         finally:
             await conn.close()
     
+    async def get_all_events_since(self, since_ts: int = 0) -> List[NormalizedEvent]:
+        """Get all normalized events since timestamp."""
+        conn = await self._get_connection()
+        
+        try:
+            events = []
+            async with conn.execute("""
+                SELECT event_id, wallet, event_type, pool, value, timestamp, source_id, chain
+                FROM normalized_events 
+                WHERE timestamp >= ?
+                ORDER BY timestamp DESC
+            """, (since_ts,)) as cursor:
+                async for row in cursor:
+                    event_id, wallet, event_type, pool, value_json, timestamp, source_id, chain = row
+                    try:
+                        value = json.loads(value_json)
+                        events.append(NormalizedEvent(
+                            event_id=event_id,
+                            wallet=wallet,
+                            event_type=event_type,
+                            pool=pool,
+                            value=value,
+                            timestamp=timestamp,
+                            source_id=source_id,
+                            chain=chain
+                        ))
+                    except json.JSONDecodeError:
+                        logger.warning(f"Corrupted event value for: {event_id}")
+            
+            return events
+            
+        finally:
+            await conn.close()
+    
     # Layer 3: Artifacts/Briefs
     async def persist_brief(self, artifact: Artifact) -> str:
         """Persist human-readable brief artifact."""
@@ -293,13 +344,20 @@ class ThreeLayerDataModel:
             watchlist_json = json.dumps(artifact.next_watchlist)
             source_ids_json = json.dumps(artifact.source_ids)
             
+            # Handle LLM fields
+            llm_struct_json = json.dumps(artifact.llm_struct) if artifact.llm_struct else None
+            llm_validation_json = json.dumps(artifact.llm_validation) if artifact.llm_validation else None
+            
             await conn.execute("""
                 INSERT OR REPLACE INTO artifacts 
-                (artifact_id, timestamp, summary_text, signals, next_watchlist, source_ids, event_count)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (artifact_id, timestamp, summary_text, signals, next_watchlist, source_ids, event_count,
+                 summary_text_llm, llm_struct, llm_validation, llm_model, llm_tokens)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 artifact.artifact_id, artifact.timestamp, artifact.summary_text,
-                signals_json, watchlist_json, source_ids_json, artifact.event_count
+                signals_json, watchlist_json, source_ids_json, artifact.event_count,
+                artifact.summary_text_llm, llm_struct_json, llm_validation_json,
+                artifact.llm_model, artifact.llm_tokens
             ))
             
             await conn.commit()
@@ -316,17 +374,21 @@ class ThreeLayerDataModel:
         try:
             artifacts = []
             async with conn.execute("""
-                SELECT artifact_id, timestamp, summary_text, signals, next_watchlist, source_ids, event_count
+                SELECT artifact_id, timestamp, summary_text, signals, next_watchlist, source_ids, event_count,
+                       summary_text_llm, llm_struct, llm_validation, llm_model, llm_tokens
                 FROM artifacts 
                 ORDER BY timestamp DESC 
                 LIMIT ?
             """, (limit,)) as cursor:
                 async for row in cursor:
-                    artifact_id, timestamp, summary_text, signals_json, watchlist_json, source_ids_json, event_count = row
+                    (artifact_id, timestamp, summary_text, signals_json, watchlist_json, source_ids_json, event_count,
+                     summary_text_llm, llm_struct_json, llm_validation_json, llm_model, llm_tokens) = row
                     try:
                         signals = json.loads(signals_json)
                         next_watchlist = json.loads(watchlist_json)
                         source_ids = json.loads(source_ids_json)
+                        llm_struct = json.loads(llm_struct_json) if llm_struct_json else None
+                        llm_validation = json.loads(llm_validation_json) if llm_validation_json else None
                         
                         artifacts.append(Artifact(
                             artifact_id=artifact_id,
@@ -335,7 +397,12 @@ class ThreeLayerDataModel:
                             signals=signals,
                             next_watchlist=next_watchlist,
                             source_ids=source_ids,
-                            event_count=event_count
+                            event_count=event_count,
+                            summary_text_llm=summary_text_llm,
+                            llm_struct=llm_struct,
+                            llm_validation=llm_validation,
+                            llm_model=llm_model,
+                            llm_tokens=llm_tokens
                         ))
                     except json.JSONDecodeError:
                         logger.warning(f"Corrupted artifact data for: {artifact_id}")

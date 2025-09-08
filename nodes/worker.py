@@ -61,7 +61,7 @@ async def worker_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 provider_name = provider_info.get("name", "unknown")
                 chain = provider_info.get("chain", "base")
             else:
-                provider_name = "bitquery"  # Legacy format
+                provider_name = provider_info if provider_info else "unknown"  # Legacy format
                 chain = "base"
 
             raw_id = f"{provider_name}_wallet_{wallet}_{int(datetime.now().timestamp())}"

@@ -12,7 +12,7 @@ Features:
 import os
 import json
 import datetime
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
 from pathlib import Path
 
 from langchain_openai import ChatOpenAI
@@ -56,24 +56,23 @@ SONNET_CLIENT = ChatOpenAI(
 )
 
 
-def _needs_sonnet(text: str) -> bool:
+def _needs_sonnet(text: str, task_type: Optional[str] = None) -> bool:
     """
     Determine if a task needs the more capable Sonnet model.
     
     Criteria:
+    - Brief generation (task_type == "brief")
     - Long/complex prompts (>180 chars)
-    - Technical keywords indicating complex reasoning
     """
-    complexity_keywords = [
-        "exploit", "reverse", "optimize", "trade", "analyze", "debug",
-        "security", "vulnerability", "penetration", "crack", "hack",
-        "algorithm", "architecture", "design", "strategy", "planning"
-    ]
+    # Check task type first
+    if task_type == "brief":
+        print(f"    🔄 Using Sonnet model for brief generation")
+        return True
     
-    return (
-        len(text) > 180 or 
-        any(keyword in text.lower() for keyword in complexity_keywords)
-    )
+    # For other tasks, use length-based heuristic
+    is_complex = len(text) > 180
+    print(f"    🔄 Using {'Sonnet' if is_complex else 'Haiku'} model based on length ({len(text)} chars)")
+    return is_complex
 
 
 def _convert_messages(messages: List[Tuple[str, str]]) -> List[SystemMessage | HumanMessage]:
@@ -89,18 +88,43 @@ def _convert_messages(messages: List[Tuple[str, str]]) -> List[SystemMessage | H
 
 def _log_interaction(model: str, messages: List[Tuple[str, str]], response: str, usage: Dict[str, Any]):
     """Log the LLM interaction for debugging and cost tracking."""
+    # Format messages for better readability
+    formatted_messages = []
+    for role, content in messages:
+        formatted_msg = {
+            "role": role,
+            "content": content.replace("\\n", "\n")  # Unescape newlines
+        }
+        formatted_messages.append(formatted_msg)
+
+    # Calculate costs and tokens
+    estimated_cost = estimate_cost(model, usage)
+    total_tokens = usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0)
+    
+    # Truncate response for readability but keep full response in logs
+    truncated_response = response[:200] + "..." if len(response) > 200 else response
+    
     log_entry = {
         "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
         "model": model,
-        "messages": messages,
-        "response": response[:200] + "..." if len(response) > 200 else response,
+        "messages": formatted_messages,  # Already in dict format with role/content
+        "response": {
+            "text": truncated_response,
+            "full_text": response  # Keep full response for debugging
+        },
         "usage": usage,
-        "estimated_cost": estimate_cost(model, usage)
+        "estimated_cost": estimated_cost,
+        "total_tokens": total_tokens
     }
     
+    # Log to file
     log_path = LOGS_DIR / f"llm-calls-{datetime.date.today().isoformat()}.jsonl"
     with open(log_path, "a") as f:
-        f.write(json.dumps(log_entry) + "\n")
+        # Use pretty printing with 2-space indentation
+        f.write(json.dumps(log_entry, indent=2) + "\n\n")
+    
+    # Print summary
+    print(f"    📊 LLM call stats: {log_entry['total_tokens']} tokens, ${estimated_cost:.6f}")
 
 
 def estimate_cost(model: str, usage: Dict[str, Any]) -> float:
@@ -120,17 +144,18 @@ def estimate_cost(model: str, usage: Dict[str, Any]) -> float:
     return cost
 
 
-def llm_call(
-    messages: List[Tuple[str, str]], 
+async def llm_call(
+    messages: List[Dict[str, str]], 
     model: str = None,
     max_tokens: int = 400,
+    task_type: str = None,  # e.g. "brief", "chat", etc.
     **kwargs
 ) -> Dict[str, Any]:
     """
     Unified LLM call through LangChain + LiteLLM.
     
     Args:
-        messages: List of (role, content) tuples, e.g. [("system", "..."), ("human", "...")]
+        messages: List of message dicts with "role" and "content" keys
         model: HAIKU_MODEL, SONNET_MODEL, or None for auto-selection
         max_tokens: Maximum tokens for response
         **kwargs: Additional parameters for the LLM call
@@ -141,8 +166,8 @@ def llm_call(
     # Auto-select model if not specified
     if model is None:
         # Use the first human message to determine complexity
-        human_content = next((content for role, content in messages if role == "human"), "")
-        model = SONNET_MODEL if _needs_sonnet(human_content) else HAIKU_MODEL
+        human_content = next((msg["content"] for msg in messages if msg["role"] == "user"), "")
+        model = SONNET_MODEL if _needs_sonnet(human_content, task_type) else HAIKU_MODEL
     
     # Select appropriate client based on model name
     if model == SONNET_MODEL:
@@ -152,12 +177,21 @@ def llm_call(
         client = HAIKU_CLIENT
         model_short = "haiku"
     
+    print(f"    📡 LLM call using {model_short} model")
+    
     # Convert messages to LangChain format
-    lc_messages = _convert_messages(messages)
+    lc_messages = []
+    for msg in messages:
+        if msg["role"] == "system":
+            lc_messages.append(SystemMessage(content=msg["content"]))
+        elif msg["role"] == "user":
+            lc_messages.append(HumanMessage(content=msg["content"]))
+        elif msg["role"] == "assistant":
+            lc_messages.append(AIMessage(content=msg["content"]))
     
     try:
         # Make the call
-        response = client.invoke(
+        response = await client.ainvoke(
             lc_messages,
             max_tokens=max_tokens,
             **kwargs
@@ -168,27 +202,37 @@ def llm_call(
         usage = response.response_metadata.get("token_usage", {}) or {}
         
         # Log the interaction
-        _log_interaction(model, messages, text, usage)
+        _log_interaction(model, [(msg["role"], msg["content"]) for msg in messages], text, usage)
         
         return {
             "text": text,
             "usage": usage,
-            "model_used": model_short,
+            "model": model_short,
             "estimated_cost": estimate_cost(model_short, usage)
         }
         
     except Exception as e:
+        # Format messages for better readability
+        formatted_messages = []
+        for msg in messages:
+            formatted_msg = {
+                "role": msg["role"],
+                "content": msg["content"].replace("\\n", "\n")  # Unescape newlines
+            }
+            formatted_messages.append(formatted_msg)
+
         # Log error and re-raise
         error_log = {
             "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
             "error": str(e),
             "model": model,
-            "messages": messages
+            "messages": formatted_messages
         }
-        
+
         log_path = LOGS_DIR / f"llm-errors-{datetime.date.today().isoformat()}.jsonl"
         with open(log_path, "a") as f:
-            f.write(json.dumps(error_log) + "\n")
+            # Use pretty printing with 2-space indentation
+            f.write(json.dumps(error_log, indent=2) + "\n\n")
         
         raise
 

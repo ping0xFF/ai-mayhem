@@ -461,7 +461,7 @@ def _fetch_wallet_activity_bitquery_mock(address: str, chain: str = "base", sinc
 
     return {
         "provider": {
-            "name": "bitquery",
+            "name": "mock",
             "chain": chain,
             "endpoint": "mock",
             "cursor": None

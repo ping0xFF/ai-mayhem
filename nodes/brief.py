@@ -1,22 +1,34 @@
 """
-Brief node with gating logic.
+Brief node with gating logic and LLM integration.
 """
 
 import time
+import json
+import logging
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional, Tuple
 
-from .config import BRIEF_COOLDOWN, BRIEF_THRESHOLD_EVENTS, BRIEF_THRESHOLD_SIGNAL
-from data_model import persist_brief, Artifact
+from .config import (
+    BRIEF_COOLDOWN, BRIEF_THRESHOLD_EVENTS, BRIEF_THRESHOLD_SIGNAL,
+    BRIEF_MODE, LLM_INPUT_POLICY, LLM_TOKEN_CAP
+)
+from data_model import (
+    persist_brief, Artifact, get_data_model,
+    NormalizedEvent
+)
 from .rich_output import formatter
+from .brief_utils import estimate_tokens, reduce_events
+from .brief_llm import generate_llm_brief
+
+logger = logging.getLogger(__name__)
 
 
 async def brief_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Enhanced brief node with gating logic.
+    Enhanced brief node with gating logic and LLM integration.
     
     Emits brief only if (new_events ≥ 5 OR max_signal ≥ 0.6) AND cooldown passed.
-    Includes optional next_watchlist.
+    Includes optional next_watchlist and LLM-generated insights.
     """
     start_time = time.time()
     formatter.log_node_progress("Brief", "Checking if brief should be emitted...")
@@ -68,7 +80,7 @@ async def brief_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "status": "memory"
         }
     
-    # Generate brief
+    # Generate deterministic brief
     top_pools = state.get("top_pools", [])
     brief_text = f"24h activity: {total_events} events across {len(event_counts)} types. "
     
@@ -123,11 +135,65 @@ async def brief_node(state: Dict[str, Any]) -> Dict[str, Any]:
     
     brief_text += f"Next watchlist: {', '.join(next_watchlist) if next_watchlist else 'none'}."
     
+    # Initialize LLM fields
+    llm_summary = None
+    llm_struct = None
+    llm_validation = None
+    llm_model = None
+    llm_tokens = None
+    
+    # Generate LLM brief if enabled
+    if BRIEF_MODE in ["llm", "both"]:
+        try:
+            # Get all events since last brief
+            data_model = await get_data_model()
+            events = await data_model.get_all_events_since(last_brief_at)
+            
+            # Check token budget
+            estimated_tokens = estimate_tokens(events, signals)
+            if LLM_INPUT_POLICY == "budgeted" and estimated_tokens > LLM_TOKEN_CAP:
+                logger.info(f"Reducing events to fit token cap ({estimated_tokens} > {LLM_TOKEN_CAP})")
+                events, signals = reduce_events(events, signals, LLM_TOKEN_CAP)
+            
+            # Generate LLM brief
+            try:
+                brief_data, usage_data = await generate_llm_brief(
+                    events=events,
+                    rollups=signals
+                )
+                
+                # Extract fields
+                llm_summary = brief_data["summary_text"]
+                llm_struct = json.dumps(brief_data["struct"])  # Convert to JSON string
+                llm_validation = json.dumps(brief_data["validation"])  # Convert to JSON string
+                llm_model = brief_data["model"]
+                llm_tokens = usage_data["total_tokens"]
+                
+                logger.info(f"Generated LLM brief using {llm_model} ({llm_tokens} tokens)")
+            except Exception as e:
+                logger.error(f"Failed to generate LLM brief: {e}")
+                # Continue with deterministic brief only
+                llm_summary = None
+                llm_struct = None
+                llm_validation = None
+                llm_model = None
+                llm_tokens = None
+            
+        except Exception as e:
+            logger.error(f"Failed to generate LLM brief: {e}")
+            # Continue with deterministic brief only
+            llm_summary = None
+            llm_struct = None
+            llm_validation = None
+            llm_model = None
+            llm_tokens = None
+    
     # Create artifact for Layer 3
     current_time = int(datetime.now().timestamp())
     artifact_id = f"brief_{current_time}"
     source_ids = state.get("source_ids", [])
     
+    # Create base artifact
     artifact = Artifact(
         artifact_id=artifact_id,
         timestamp=current_time,
@@ -135,7 +201,12 @@ async def brief_node(state: Dict[str, Any]) -> Dict[str, Any]:
         signals=signals,
         next_watchlist=next_watchlist,
         source_ids=source_ids,
-        event_count=total_events
+        event_count=total_events,
+        summary_text_llm=llm_summary if BRIEF_MODE in ["llm", "both"] else None,
+        llm_struct=llm_struct if BRIEF_MODE in ["llm", "both"] else None,
+        llm_validation=llm_validation if BRIEF_MODE in ["llm", "both"] else None,
+        llm_model=llm_model if BRIEF_MODE in ["llm", "both"] else None,
+        llm_tokens=llm_tokens if BRIEF_MODE in ["llm", "both"] else None
     )
     
     # Persist to Layer 3
@@ -148,10 +219,19 @@ async def brief_node(state: Dict[str, Any]) -> Dict[str, Any]:
         execution_time
     )
     
-    return {
+    result = {
         **state,
         "brief_text": brief_text,
         "next_watchlist": next_watchlist,
         "last_brief_at": current_time,
         "status": "memory"
     }
+    
+    # Add LLM fields to result if enabled and available
+    if BRIEF_MODE in ["llm", "both"] and llm_summary is not None:
+        result.update({
+            "llm_summary": llm_summary,
+            "llm_struct": llm_struct
+        })
+    
+    return result
