@@ -288,13 +288,25 @@ async def _fetch_base_mainnet_asset_transfers(
 
 
 # For backward compatibility
+import warnings
+
 async def fetch_wallet_activity_alchemy_live_legacy(
     address: str,
     network: str = "base-mainnet",
     max_transactions: int = 1000,
     hours_back: Optional[int] = None
 ) -> Dict[str, Any]:
-    """Legacy function name for backward compatibility."""
+    """Legacy function name for backward compatibility.
+    
+    Deprecated: Use fetch_wallet_activity_alchemy_live() instead.
+    This function will be removed in a future version.
+    """
+    warnings.warn(
+        "fetch_wallet_activity_alchemy_live_legacy() is deprecated. "
+        "Use fetch_wallet_activity_alchemy_live() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     return await fetch_wallet_activity_alchemy_live(
         address, max_transactions, hours_back, network
     )

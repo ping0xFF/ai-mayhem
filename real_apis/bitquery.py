@@ -429,10 +429,22 @@ async def fetch_wallet_activity_bitquery_live(
 
 
 # For backward compatibility and testing
+import warnings
+
 async def fetch_wallet_activity_bitquery(
     address: str,
     chain: str = "base",
     since_ts: int = None
 ) -> Dict[str, Any]:
-    """Alias for the live function."""
+    """Alias for the live function.
+    
+    Deprecated: Use fetch_wallet_activity_bitquery_live() instead.
+    This function will be removed in a future version.
+    """
+    warnings.warn(
+        "fetch_wallet_activity_bitquery() is deprecated. "
+        "Use fetch_wallet_activity_bitquery_live() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     return await fetch_wallet_activity_bitquery_live(address, chain, since_ts)

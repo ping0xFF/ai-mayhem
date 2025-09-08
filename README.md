@@ -120,7 +120,7 @@ BITQUERY_API_KEY=your_bitquery_api_key_here
 
 # Source Selection
 WALLET_RECON_SOURCE=alchemy  # Options: alchemy, covalent, bitquery
-# BITQUERY_LIVE=0              # Deprecated - use BITQUERY_ACCESS_TOKEN instead
+# Note: BITQUERY_LIVE is no longer supported - use BITQUERY_ACCESS_TOKEN instead
 
 # Optional: Enable verbose logging for debugging
 BITQUERY_VERBOSE=1
@@ -415,8 +415,8 @@ python demos/three_layer_demo.py
 # 7. Verify imports work correctly
 python -c "from nodes import planner_node, worker_node, analyze_node, brief_node, memory_node; print('✅ All nodes imported successfully')"
 
-# 8. Check that legacy functions are available for historical use
-python -c "from agent import legacy_planner_node, legacy_worker_node; print('✅ Legacy functions available for historical use')"
+# 8. Check that legacy functions are available for historical reference
+python -c "from agent import legacy_planner_node, legacy_worker_node; print('✅ Legacy functions preserved for historical use')"
 
 # 9. Full demo (may hang - use Ctrl+C if needed)
 python demos/lp_e2e_demo.py
