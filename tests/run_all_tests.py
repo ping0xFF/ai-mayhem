@@ -27,8 +27,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 TEST_FILES = [
     "test_json_storage.py",          # Foundation - no dependencies
     "test_three_layer_data_model.py", # Depends on json_storage
+    "test_wallet_service.py",        # Wallet management service
     "test_enhanced_lp.py",           # LP functionality
     "test_lp_brief_gating.py",       # LP brief logic
+    "test_llm_brief.py",             # LLM brief functionality
     "test_planner_worker.py",        # Core planner/worker (rule-based)
     "test_agent.py",                 # Main agent (may be broken)
     "test_live.py",                  # Live integration (may require setup)

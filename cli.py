@@ -13,7 +13,8 @@ import time
 from typing import NoReturn, Optional
 from datetime import datetime
 
-from nodes.config import DEBUG, is_discord_enabled, load_monitored_wallets, save_monitored_wallets
+from nodes.config import DEBUG, is_discord_enabled
+from wallet_service import WalletService
 from nodes.rich_output import formatter
 from agent import LangGraphAgent
 
@@ -25,7 +26,7 @@ class CLIError(Exception):
 
 def show_monitored_wallets() -> None:
     """Show currently monitored wallet addresses."""
-    wallets = load_monitored_wallets()
+    wallets = WalletService.get_wallets()
     if wallets:
         print("📋 Currently monitored wallets:")
         for i, wallet in enumerate(wallets, 1):
@@ -39,27 +40,30 @@ def show_monitored_wallets() -> None:
 
 def add_monitored_wallet(wallet_address: str) -> None:
     """Add a wallet to the monitored list."""
-    wallets = load_monitored_wallets()
-    if wallet_address in wallets:
-        print(f"⚠️  Wallet {wallet_address} is already being monitored")
-        return
+    try:
+        # Validate address format first
+        if not WalletService.validate_wallet_address(wallet_address):
+            print(f"❌ Invalid Ethereum address format: {wallet_address}")
+            return
 
-    wallets.append(wallet_address)
-    save_monitored_wallets(wallets)
-    print(f"✅ Added wallet {wallet_address}")
-    print(f"   Now monitoring {len(wallets)} wallets")
+        if WalletService.add_wallet(wallet_address):
+            count = WalletService.get_wallet_count()
+            print(f"✅ Added wallet {wallet_address}")
+            print(f"   Now monitoring {count} wallets")
+        else:
+            print(f"⚠️  Wallet {wallet_address} is already being monitored")
+
+    except ValueError as e:
+        print(f"❌ Error: {e}")
 
 def remove_monitored_wallet(wallet_address: str) -> None:
     """Remove a wallet from the monitored list."""
-    wallets = load_monitored_wallets()
-    if wallet_address not in wallets:
+    if WalletService.remove_wallet(wallet_address):
+        count = WalletService.get_wallet_count()
+        print(f"✅ Removed wallet {wallet_address}")
+        print(f"   Now monitoring {count} wallets")
+    else:
         print(f"⚠️  Wallet {wallet_address} is not currently being monitored")
-        return
-
-    wallets.remove(wallet_address)
-    save_monitored_wallets(wallets)
-    print(f"✅ Removed wallet {wallet_address}")
-    print(f"   Now monitoring {len(wallets)} wallets")
 
 
 async def run_wallet_brief_mode() -> int:

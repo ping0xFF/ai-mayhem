@@ -13,6 +13,11 @@ WALLET_RECON_SOURCE = os.getenv("WALLET_RECON_SOURCE", "alchemy")
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
+# Logging configuration
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+VERBOSE_API_LOGS = os.getenv("VERBOSE_API_LOGS", "false").lower() == "true"
+LOG_MALFORMED_TRANSACTIONS = os.getenv("LOG_MALFORMED_TRANSACTIONS", "false").lower() == "true"
+
 # Cursor staleness thresholds
 CURSOR_STALE_WALLET = 2 * 3600      # 2 hours
 CURSOR_STALE_LP = 6 * 3600          # 6 hours
@@ -92,3 +97,16 @@ def validate_llm_input_policy(policy: str) -> bool:
     """Validate LLM input policy setting."""
     valid_policies = ['full', 'budgeted']
     return policy in valid_policies
+
+# Logging helpers
+def should_log_verbose() -> bool:
+    """Check if verbose logging is enabled."""
+    return VERBOSE_API_LOGS or DEBUG
+
+def should_log_warnings() -> bool:
+    """Check if warning-level messages should be logged."""
+    return LOG_LEVEL in ['DEBUG', 'INFO', 'WARNING']
+
+def should_log_malformed() -> bool:
+    """Check if malformed transaction logging is enabled."""
+    return LOG_MALFORMED_TRANSACTIONS

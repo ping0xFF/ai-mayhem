@@ -15,6 +15,7 @@ import asyncio
 import os
 import time
 import json
+import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 import httpx
@@ -24,6 +25,9 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+# Configure logging
+logger = logging.getLogger(__name__)
+
 # Covalent configuration
 COVALENT_BASE_URL = "https://api.covalenthq.com/v1"
 COVALENT_API_KEY = os.getenv("COVALENT_API_KEY")
@@ -31,6 +35,17 @@ REQUEST_TIMEOUT = 30  # seconds
 MAX_RETRIES = 3
 BASE_DELAY = 1.0  # seconds
 MAX_DELAY = 60.0  # seconds max per run
+
+def _should_log_verbose() -> bool:
+    """Check if verbose API logging is enabled."""
+    from ..nodes.config import should_log_verbose
+    return should_log_verbose()
+
+
+def _should_log_malformed() -> bool:
+    """Check if malformed transaction logging is enabled."""
+    from ..nodes.config import should_log_malformed
+    return should_log_malformed()
 
 
 class CovalentClient:
@@ -147,9 +162,9 @@ async def fetch_wallet_activity_covalent(
     if not COVALENT_API_KEY:
         raise ValueError("COVALENT_API_KEY environment variable is required for Covalent queries")
 
-    print(f"    📡 Querying Covalent for {address} on chain {chain_id}...")
-    print(f"    📄 Page: {page}, Expected transactions: ~{limit}")
-    print(f"    🎯 Using page-based endpoint for 89x size reduction!")
+    if _should_log_verbose():
+        print(f"    📡 Querying Covalent for {address} on chain {chain_id}...")
+        print(f"    📄 Page: {page}, Expected transactions: ~{limit}")
 
     async with CovalentClient() as client:
         # 🎯 USE PAGE-BASED ENDPOINT: Provides 89x size reduction!
@@ -168,10 +183,11 @@ async def fetch_wallet_activity_covalent(
             links = data.get("links", {})
             has_next = links.get("next") is not None
 
-            print(f"    📊 Covalent returned {len(transactions)} transactions (page {current_page})")
-            print(f"    📏 Average size per transaction: ~{(len(str(result)) // max(len(transactions), 1))} bytes")
-            if has_next:
-                print(f"    📄 Next page available: {current_page + 1}")
+            if _should_log_verbose():
+                print(f"    📊 Covalent returned {len(transactions)} transactions (page {current_page})")
+                print(f"    📏 Average size per transaction: ~{(len(str(result)) // max(len(transactions), 1))} bytes")
+                if has_next:
+                    print(f"    📄 Next page available: {current_page + 1}")
 
             # Convert to standardized format
             events = []
@@ -212,7 +228,10 @@ async def fetch_wallet_activity_covalent(
                     events.append(event)
 
                 except Exception as e:
-                    print(f"    ⚠️  Skipping malformed transaction {tx.get('tx_hash', 'unknown')}: {e}")
+                    if _should_log_malformed():
+                        logger.warning(f"Skipping malformed transaction {tx.get('tx_hash', 'unknown')}: {e}")
+                    elif _should_log_verbose():
+                        print(f"    ⚠️  Skipping malformed transaction {tx.get('tx_hash', 'unknown')}")
                     continue
 
             return {

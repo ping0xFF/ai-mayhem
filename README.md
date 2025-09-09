@@ -74,7 +74,10 @@ ai-mayhem/
 │   ├── test_three_layer_data_model.py  # Three-layer data model tests
 │   ├── test_json_storage.py    # JSON storage tests
 │   ├── test_agent.py           # Main agent tests
-│   └── test_live.py            # Live integration tests
+│   ├── test_live.py            # Live integration tests
+│   └── test_wallet_service.py  # Wallet management service tests
+├── wallet_service.py          # Wallet management business logic
+├── wallets.txt                # Monitored wallet addresses configuration
 ├── data/
 │   └── raw/
 │       └── nansen_real_api_response.json  # Sample API responses
@@ -120,10 +123,17 @@ BITQUERY_API_KEY=your_bitquery_api_key_here
 
 # Source Selection
 WALLET_RECON_SOURCE=alchemy  # Options: alchemy, covalent, bitquery
-# Note: BITQUERY_LIVE is no longer supported - use BITQUERY_ACCESS_TOKEN instead
 
 # Optional: Enable verbose logging for debugging
 BITQUERY_VERBOSE=1
+
+# Optional: Bitquery API (for detailed transaction data)
+BITQUERY_ACCESS_TOKEN=your_bitquery_api_key_here
+
+# Logging configuration
+LOG_LEVEL=INFO                    # DEBUG, INFO, WARNING, ERROR
+VERBOSE_API_LOGS=false           # Enable detailed API request/response logging
+LOG_MALFORMED_TRANSACTIONS=false  # Enable logging of malformed transactions
 
 # LiteLLM settings (if using local proxy)
 LITELLM_URL=http://localhost:8000
@@ -391,6 +401,11 @@ export DISCORD_WEBHOOK_URL="https://discord.com/..."
 export WALLET_RECON_SOURCE="alchemy"
 export BUDGET_DAILY="5.0"
 export DEBUG="false"
+
+# Production logging (quiet by default)
+export LOG_LEVEL="WARNING"
+export VERBOSE_API_LOGS="false"
+export LOG_MALFORMED_TRANSACTIONS="false"
 ```
 
 ### **Configuration Validation**
@@ -410,7 +425,7 @@ The application validates configuration at startup:
 ### **Migration Notes**
 
 **Legacy Environment Variables** (deprecated but still supported):
-- `BITQUERY_LIVE=1` → Use `BITQUERY_ACCESS_TOKEN=your_token` instead
+- Old configuration formats are automatically migrated to current format
 
 **Future Improvements** (see Code Quality Standards section):
 - Add configuration file support (YAML/TOML)
@@ -452,13 +467,14 @@ python demos/lp_e2e_demo.py
 ```
 
 ### Expected Test Results
-- **`run_all_tests.py`**: Should run all 7 test files and report 7/7 passing (all tests working!)
+- **`run_all_tests.py`**: Should run all 9 test files and report 9/9 passing (all tests working!)
 - **`lp_e2e_demo.py`**: Complete LP monitoring flow with 5 events, signals, and provenance
 - **`quick_verification.py`**: Should complete all tests without hanging
 - **`covalent_demo.py`**: Should demonstrate Covalent API integration with 31+ transactions
 - **`test_enhanced_lp.py`**: 7 tests should pass (LP tools, worker saves, normalization, signals, idempotency)
 - **`test_lp_brief_gating.py`**: 7 tests should pass (LP gating, artifact persistence, provenance, thresholds)
 - **`test_planner_worker.py`**: 4 tests should pass (planner selection, worker saves, analyze rollup, brief gating)
+- **`test_wallet_service.py`**: 13 tests should pass (wallet CRUD operations, validation, error handling)
 - **Legacy Functions**: `legacy_planner_node()` and `legacy_worker_node()` are preserved in `agent.py` for historical reference and potential future use
 - **`test_three_layer_data_model.py`**: 7 tests should pass (all three layers, provenance, idempotency)
 - **`test_json_storage.py`**: 12 tests should pass (upsert, query, delete, validation, etc.)
@@ -555,7 +571,7 @@ ALCHEMY_API_KEY=your_alchemy_key
 # Fallback sources
 COVALENT_API_KEY=your_covalent_key
 BITQUERY_API_KEY=your_bitquery_key
-# BITQUERY_LIVE=1  # Deprecated - use BITQUERY_ACCESS_TOKEN instead
+BITQUERY_ACCESS_TOKEN=your_bitquery_token
 ```
 
 2. **Replace Mock Tools** (Automatic Fallback):
