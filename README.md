@@ -134,6 +134,35 @@ OPENAI_BASE_URL=http://localhost:8000
 NANSEN_API_KEY=your_nansen_key_here
 ```
 
+### 2. Configure Wallet Monitoring
+
+Before running production mode, set up which wallets to monitor:
+
+**Option 1: Environment Variable (recommended for production)**
+```bash
+export MONITORED_WALLETS="0x123...,0xabc...,0xdef..."
+```
+
+**Option 2: Configuration File**
+```bash
+# Create wallets.txt with one address per line
+echo "0x1234567890abcdef1234567890abcdef12345678" > wallets.txt
+echo "0xabcdef1234567890abcdef1234567890abcdef12" >> wallets.txt
+```
+
+**Option 3: CLI Management**
+```bash
+# Add wallets interactively
+python -m ai_mayhem.cli wallets add 0x1234567890abcdef1234567890abcdef12345678
+python -m ai_mayhem.cli wallets add 0xabcdef1234567890abcdef1234567890abcdef12
+
+# View current wallets
+python -m ai_mayhem.cli wallets show
+
+# Remove wallets
+python -m ai_mayhem.cli wallets remove 0x1234567890abcdef1234567890abcdef12345678
+```
+
 ### 3. Run Demo
 
 ```bash
@@ -975,8 +1004,11 @@ This section outlines the coding standards and improvements needed to evolve thi
 Execute a single reconnaissance cycle and exit - perfect for cron jobs and automated monitoring.
 
 ```bash
-# Run once and exit
+# Run once and exit (uses configured wallets)
 python -m ai_mayhem.cli run --mode=wallet-brief
+
+# Override with specific wallets for one-off runs
+python -m ai_mayhem.cli run --mode=wallet-brief --wallets="0x123...,0x456..."
 
 # With Discord notifications
 export DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/your_webhook_id/your_webhook_token"

@@ -237,7 +237,7 @@ Be specific about what was done and any important findings or results.
 
 def budget_node(state: AgentState) -> AgentState:
     """Check if we've exceeded the daily budget."""
-    from nodes.output import formatter
+    from nodes.rich_output import formatter
     
     # Check if we need to reset spent_today for a new day
     state = _reset_spent_if_new_day(state)

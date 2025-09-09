@@ -10,7 +10,7 @@ from typing import Dict, Any, List, Optional, Tuple
 
 from .config import (
     BRIEF_COOLDOWN, BRIEF_THRESHOLD_EVENTS, BRIEF_THRESHOLD_SIGNAL,
-    BRIEF_MODE, LLM_INPUT_POLICY, LLM_TOKEN_CAP
+    BRIEF_MODE, LLM_INPUT_POLICY, LLM_TOKEN_CAP, load_monitored_wallets
 )
 from data_model import (
     persist_brief, Artifact, get_data_model,
@@ -82,8 +82,16 @@ async def brief_node(state: Dict[str, Any]) -> Dict[str, Any]:
     
     # Generate deterministic brief
     top_pools = state.get("top_pools", [])
-    brief_text = f"24h activity: {total_events} events across {len(event_counts)} types. "
-    
+
+    # Load monitored wallets for context
+    monitored_wallets = load_monitored_wallets()
+    wallet_count = len(monitored_wallets)
+
+    brief_text = f"24h activity: {total_events} events across {len(event_counts)} types"
+    if wallet_count > 0:
+        brief_text += f" (monitoring {wallet_count} wallets)"
+    brief_text += ". "
+
     if top_pools:
         brief_text += f"Top pools: {', '.join(top_pools[:3])}. "
     

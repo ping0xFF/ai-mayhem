@@ -7,11 +7,13 @@ from datetime import datetime
 from typing import Dict, Any
 
 from .config import (
-    BUDGET_DAILY, 
-    CURSOR_STALE_WALLET, 
-    CURSOR_STALE_LP, 
-    CURSOR_STALE_EXPLORE
+    BUDGET_DAILY,
+    CURSOR_STALE_WALLET,
+    CURSOR_STALE_LP,
+    CURSOR_STALE_EXPLORE,
+    load_monitored_wallets
 )
+from json_storage import get_cursor, set_cursor
 from .rich_output import formatter
 
 
@@ -41,10 +43,35 @@ async def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
     # Get current cursors
     cursors = state.get("cursors", {})
     current_time = int(datetime.now().timestamp())
-    
+
+    # Seed wallet cursors if none exist
+    wallet_cursors = {k: v for k, v in cursors.items() if k.startswith("wallet:")}
+    if not wallet_cursors:
+        monitored_wallets = load_monitored_wallets()
+        if monitored_wallets:
+            formatter.log_node_progress(
+                "Planner",
+                f"Seeding {len(monitored_wallets)} monitored wallets..."
+            )
+            for wallet in monitored_wallets:
+                cursor_key = f"wallet:{wallet}"
+                # Create cursor if it doesn't exist (set to 0 to force immediate update)
+                if cursor_key not in cursors:
+                    await set_cursor(cursor_key, 0, f"Seeded cursor for monitored wallet {wallet}")
+                    cursors[cursor_key] = 0
+                    formatter.log_node_progress(
+                        "Planner",
+                        f"Seeded cursor for {wallet}"
+                    )
+        else:
+            formatter.log_node_progress(
+                "Planner",
+                "No monitored wallets configured - skipping wallet recon"
+            )
+
     # Check wallet cursors (stale if >2h)
     for cursor_key, cursor_ts in cursors.items():
-        if cursor_key.startswith("wallet:") and cursor_ts:
+        if cursor_key.startswith("wallet:") and cursor_ts is not None:
             wallet = cursor_key.split(":", 1)[1]
             if current_time - cursor_ts > CURSOR_STALE_WALLET:
                 execution_time = time.time() - start_time

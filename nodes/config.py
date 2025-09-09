@@ -41,6 +41,10 @@ ANALYZE_TIMEOUT = 15    # seconds
 BRIEF_TIMEOUT = 10      # seconds
 MEMORY_TIMEOUT = 10     # seconds
 
+# Wallet configuration
+MONITORED_WALLETS_FILE = os.getenv("MONITORED_WALLETS_FILE", "wallets.txt")
+MONITORED_WALLETS_ENV = os.getenv("MONITORED_WALLETS", "")
+
 # Helper functions
 def is_discord_enabled() -> bool:
     """Check if Discord notifications are enabled."""
@@ -55,6 +59,34 @@ def validate_brief_mode(mode: str) -> bool:
     """Validate brief mode setting."""
     valid_modes = ['deterministic', 'llm', 'both']
     return mode in valid_modes
+
+def load_monitored_wallets() -> list[str]:
+    """Load monitored wallets from file or environment variable."""
+    wallets = []
+
+    # Try environment variable first
+    if MONITORED_WALLETS_ENV:
+        wallets.extend([w.strip() for w in MONITORED_WALLETS_ENV.split(',') if w.strip()])
+        return wallets
+
+    # Try file next
+    try:
+        with open(MONITORED_WALLETS_FILE, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    wallets.append(line)
+    except FileNotFoundError:
+        pass  # File doesn't exist, use empty list
+
+    return wallets
+
+def save_monitored_wallets(wallets: list[str]) -> None:
+    """Save monitored wallets to file."""
+    with open(MONITORED_WALLETS_FILE, 'w') as f:
+        f.write("# Monitored wallet addresses (one per line)\n")
+        for wallet in wallets:
+            f.write(f"{wallet}\n")
 
 def validate_llm_input_policy(policy: str) -> bool:
     """Validate LLM input policy setting."""
