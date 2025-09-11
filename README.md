@@ -1126,6 +1126,134 @@ This section outlines the coding standards and improvements needed to evolve thi
 
 ---
 
+## 🔍 **Output Validation & Anomaly Detection**
+
+### **Critical: Always Validate Agent Output**
+
+**Before considering any task complete, the agent MUST examine the output for anomalies and inconsistencies.**
+
+### **Required Output Checks**
+
+#### **1. Repeated Operations Detection**
+```bash
+# ❌ BAD: Repeated seeding messages
+[Planner] Seeding 4 monitored wallets...
+[Planner] Seeding 4 monitored wallets...  # ← This should NOT happen on subsequent runs
+
+# ✅ GOOD: One-time seeding
+[Planner] Seeding 4 monitored wallets...  # First run only
+[Planner] Selected wallet_recon (cursor stale >2h for 0x123...)  # Subsequent runs
+```
+
+#### **2. State Persistence Validation**
+```bash
+# ❌ BAD: Empty state on every run
+[Planner] No cursors found, seeding wallets...  # Every run
+[Planner] No cursors found, seeding wallets...  # Every run
+
+# ✅ GOOD: Persistent state
+[Planner] Seeding 4 monitored wallets...  # First run
+[Planner] Selected wallet_recon (cursor stale >2h for 0x123...)  # Subsequent runs
+```
+
+#### **3. Provider Status Consistency**
+```bash
+# ❌ BAD: Contradictory provider status
+✅ BITQUERY_ACCESS_TOKEN found: 0999c774-9... (length: 36)
+❌ Bitquery provider unavailable (no API key)  # ← Contradiction!
+
+# ✅ GOOD: Consistent provider status
+✅ BITQUERY_ACCESS_TOKEN found: 0999c774-9... (length: 36)
+✅ Bitquery provider available (API key present)
+```
+
+#### **4. Data Processing Validation**
+```bash
+# ❌ BAD: Retrieved events but processed none
+[Worker ] Retrieved 61 events (0.16s)
+[Analyze] Processed 0 events, computed 0 signals (0.00s)  # ← Data loss!
+
+# ✅ GOOD: Events retrieved and processed
+[Worker ] Retrieved 61 events (0.16s)
+[Analyze] Processed 61 events, computed 12 signals (0.00s)
+```
+
+#### **5. Token Usage Anomalies**
+```bash
+# ❌ BAD: Unexpected token usage
+📊 LLM call stats: 0 tokens, $0.000000  # ← No tokens used but call made?
+
+# ✅ GOOD: Reasonable token usage
+📊 LLM call stats: 6221 tokens, $0.000000
+```
+
+### **Automated Anomaly Detection**
+
+#### **Output Pattern Validation**
+```python
+# Add to test suite - detect repeated operations
+def test_no_repeated_operations():
+    """Ensure operations don't repeat unnecessarily."""
+    output = run_agent_multiple_times()
+    
+    # Check for repeated seeding
+    seeding_count = output.count("Seeding")
+    assert seeding_count <= 1, f"Wallet seeding repeated {seeding_count} times"
+    
+    # Check for repeated provider checks
+    provider_checks = output.count("provider available")
+    assert provider_checks <= 1, f"Provider checks repeated {provider_checks} times"
+```
+
+#### **State Consistency Checks**
+```python
+def test_state_persistence():
+    """Ensure state persists between runs."""
+    # Run agent twice
+    result1 = run_agent()
+    result2 = run_agent()
+    
+    # Verify cursors persist
+    assert result2["cursors"] != {}, "Cursors not persisted between runs"
+    
+    # Verify no repeated seeding
+    assert "Seeding" not in result2["logs"], "Repeated wallet seeding detected"
+```
+
+### **Manual Validation Checklist**
+
+Before marking any task complete, verify:
+
+- [ ] **No repeated operations** (seeding, provider checks, etc.)
+- [ ] **State persists** between runs (cursors, configuration)
+- [ ] **Provider status consistent** (no contradictory messages)
+- [ ] **Data flows correctly** (retrieved events = processed events)
+- [ ] **Token usage reasonable** (not 0 when LLM called)
+- [ ] **Error messages clear** (no cryptic failures)
+- [ ] **Logs make sense** (chronological, logical flow)
+
+### **Common Anomalies to Watch For**
+
+1. **Repeated Wallet Seeding**: Indicates cursor persistence failure
+2. **Provider Contradictions**: Token found but provider unavailable
+3. **Data Loss**: Retrieved events but processed none
+4. **State Reset**: Configuration lost between runs
+5. **Token Anomalies**: Unexpected token usage patterns
+6. **Error Cascades**: One error causing multiple failures
+
+### **When to Investigate**
+
+**Immediately investigate if you see:**
+- Same operation repeated multiple times
+- Contradictory status messages
+- Data retrieved but not processed
+- State that doesn't persist
+- Unexpected error patterns
+
+**These indicate fundamental issues that must be fixed before proceeding.**
+
+---
+
 ## 🚀 **Run in Production**
 
 ### **Wallet Brief Mode**
