@@ -87,6 +87,7 @@ ai-mayhem/
 │   └── test_wallet_service.py  # Wallet management service tests
 ├── wallet_service.py          # Wallet management business logic
 ├── wallets.txt                # Monitored wallet addresses configuration
+├── clear_db.py                # Database cleaner utility
 ├── data/
 │   └── raw/
 │       └── nansen_real_api_response.json  # Sample API responses
@@ -172,14 +173,14 @@ echo "0xabcdef1234567890abcdef1234567890abcdef12" >> wallets.txt
 **Option 3: CLI Management**
 ```bash
 # Add wallets interactively
-python -m ai_mayhem.cli wallets add 0x1234567890abcdef1234567890abcdef12345678
-python -m ai_mayhem.cli wallets add 0xabcdef1234567890abcdef1234567890abcdef12
+python cli.py wallets add 0x1234567890abcdef1234567890abcdef12345678
+python cli.py wallets add 0xabcdef1234567890abcdef1234567890abcdef12
 
 # View current wallets
-python -m ai_mayhem.cli wallets show
+python cli.py wallets show
 
 # Remove wallets
-python -m ai_mayhem.cli wallets remove 0x1234567890abcdef1234567890abcdef12345678
+python cli.py wallets remove 0x1234567890abcdef1234567890abcdef12345678
 ```
 
 ### 3. Run Demo
@@ -199,6 +200,10 @@ python tests/run_all_tests.py           # 🏆 RECOMMENDED: Run ALL tests
 python tests/test_enhanced_lp.py        # LP functionality tests
 python tests/test_lp_brief_gating.py    # LP brief gating tests
 python tests/test_planner_worker.py     # Core Planner/Worker node tests
+python tests/test_llm_brief.py          # LLM brief functionality tests
+
+# LLM-backed brief demo
+python demos/llm_brief_demo.py          # LLM brief modes and token management
 
 # Wallet Recon demos
 python demos/covalent_demo.py           # 🆕 Covalent wallet recon demo
@@ -484,6 +489,7 @@ python demos/lp_e2e_demo.py
 - **`test_lp_brief_gating.py`**: 7 tests should pass (LP gating, artifact persistence, provenance, thresholds)
 - **`test_planner_worker.py`**: 4 tests should pass (planner selection, worker saves, analyze rollup, brief gating)
 - **`test_wallet_service.py`**: 13 tests should pass (wallet CRUD operations, validation, error handling)
+- **`test_llm_brief.py`**: 7 tests should pass (LLM integration, mode switching, token management, persistence)
 - **Legacy Functions**: `legacy_planner_node()` and `legacy_worker_node()` are preserved in `agent.py` for historical reference and potential future use
 - **`test_three_layer_data_model.py`**: 7 tests should pass (all three layers, provenance, idempotency)
 - **`test_json_storage.py`**: 12 tests should pass (upsert, query, delete, validation, etc.)
@@ -504,17 +510,103 @@ The `tests/run_all_tests.py` script automatically runs all test files in the cor
 
 **Always run this first** to catch test suite issues before committing!
 
-### Test Coverage
-- **LP Tools**: Enhanced mock tools with simple/realistic fixtures
-- **Three-Layer Data Flow**: Scratch → Events → Artifacts with provenance
-- **LP-Specific Signals**: Net liquidity delta, churn rate, activity score
-- **LP Brief Gating**: LP-focused thresholds and heatmap generation
-- **Planner Logic**: Cursor staleness and action selection
-- **Worker Behavior**: Tool execution and idempotent saves
-- **Analyze Processing**: Event counting and signal computation
-- **Brief Gating**: Thresholds and cooldown logic
-- **JSON Storage**: Upsert operations and cursor management
-- **Idempotent Operations**: No duplicate data across all layers
+### Required Test Categories
+
+When adding new code or modifying existing code, you MUST write tests for these categories:
+
+1. **Field Consistency Tests**
+   - Test field name consistency between components (e.g., timestamp vs ts)
+   - Test field format consistency (e.g., transaction hash length)
+   - Test field type consistency (e.g., integer vs string timestamps)
+   Example: `tests/test_field_consistency.py`
+
+2. **Cross-Component Tests**
+   - Test data flow between components (e.g., mock → analyze → brief)
+   - Test field transformations between layers
+   - Test provider compatibility (e.g., mock data matches real API format)
+   Example: `tests/test_three_layer_data_model.py`
+
+3. **Component-Specific Tests**
+   - **LP Tools**: Mock tools and fixtures
+   - **Data Flow**: Layer transitions (Scratch → Events → Artifacts)
+   - **Signals**: Metrics and calculations
+   - **Gating**: Thresholds and conditions
+   - **Planner**: Action selection logic
+   - **Worker**: Tool execution and saves
+   - **Storage**: Database operations
+   Example: `tests/test_planner_worker.py`
+
+4. **Integration Tests**
+   - Test complete workflows end-to-end
+   - Test provider fallback chains
+   - Test real API interactions
+   Example: `tests/test_live.py`
+
+5. **Edge Case Tests**
+   - Test field presence/absence
+   - Test invalid/malformed data
+   - Test error conditions
+   Example: `tests/test_json_storage.py`
+
+### Test Development Process
+
+1. **Write Tests First (TDD)**
+   ```python
+   # 1. Write a failing test
+   def test_field_consistency(self):
+       mock_event = get_mock_event()
+       self.assertIn("timestamp", mock_event, "Events must use timestamp field")
+   
+   # 2. Run test to verify it fails
+   # 3. Implement the fix
+   # 4. Run test to verify it passes
+   ```
+
+2. **Test Coverage Requirements**
+   - Minimum 90% code coverage
+   - All public methods must have tests
+   - All field transformations must have tests
+   - All error conditions must have tests
+
+3. **Test Organization**
+   - One test file per component
+   - Separate test classes for different aspects
+   - Clear test method names describing what's being tested
+   - Comments explaining complex test scenarios
+
+4. **Common Testing Pitfalls**
+   - Inconsistent field names between components
+   - Missing cross-component tests
+   - Incomplete error condition testing
+   - Insufficient edge case coverage
+   - Not testing field format consistency
+   - Not testing data transformations
+
+5. **Testing Standards**
+   - Use descriptive test method names
+   - Include test docstrings explaining purpose
+   - Group related tests in test classes
+   - Mock external dependencies
+   - Use proper test fixtures
+   - Clean up test data in tearDown
+
+6. **Required Test Checklist**
+   Before marking any code change as complete:
+   - [ ] Field consistency tests exist
+   - [ ] Cross-component tests exist
+   - [ ] Edge case tests exist
+   - [ ] Test coverage is >90%
+   - [ ] All error conditions are tested
+   - [ ] All field transformations are tested
+   - [ ] Integration tests pass
+   - [ ] No test warnings or TODOs
+
+7. **Test Maintenance**
+   - Review and update tests when changing interfaces
+   - Remove obsolete tests
+   - Keep test data current
+   - Update test documentation
+   - Monitor test execution time
 
 ## 🏗️ Three-Layer Data Model Architecture
 
@@ -717,6 +809,10 @@ python demos/lp_e2e_demo.py
 # View database contents
 sqlite3 agent_state.db ".tables"
 sqlite3 agent_state.db "SELECT * FROM json_cache_scratch LIMIT 5;"
+
+# Clear database for fresh runs
+python clear_db.py                    # Interactive - shows stats and confirms
+python clear_db.py --stats           # Show current database statistics only
 ```
 
 ## 💧 LP Monitoring Features
@@ -1038,14 +1134,14 @@ Execute a single reconnaissance cycle and exit - perfect for cron jobs and autom
 
 ```bash
 # Run once and exit (uses configured wallets)
-python -m ai_mayhem.cli run --mode=wallet-brief
+python cli.py run --mode=wallet-brief
 
 # Override with specific wallets for one-off runs
-python -m ai_mayhem.cli run --mode=wallet-brief --wallets="0x123...,0x456..."
+python cli.py run --mode=wallet-brief --wallets="0x123...,0x456..."
 
 # With Discord notifications
 export DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/your_webhook_id/your_webhook_token"
-python -m ai_mayhem.cli run --mode=wallet-brief
+python cli.py run --mode=wallet-brief
 ```
 
 ### **Cron Job Setup**
@@ -1055,7 +1151,7 @@ python -m ai_mayhem.cli run --mode=wallet-brief
 crontab -e
 
 # Add entry for every 30 minutes
-*/30 * * * * cd /path/to/ai-mayhem && /usr/bin/python3 -m ai_mayhem.cli run --mode=wallet-brief >> /var/log/ai-mayhem.log 2>&1
+*/30 * * * * cd /path/to/ai-mayhem && /usr/bin/python3 cli.py run --mode=wallet-brief >> /var/log/ai-mayhem.log 2>&1
 ```
 
 ### **Systemd Service**
@@ -1071,7 +1167,7 @@ After=network.target
 Type=oneshot
 User=ai-mayhem
 WorkingDirectory=/path/to/ai-mayhem
-ExecStart=/usr/bin/python3 -m ai_mayhem.cli run --mode=wallet-brief
+ExecStart=/usr/bin/python3 cli.py run --mode=wallet-brief
 Environment=ALCHEMY_API_KEY=your_key
 Environment=DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/your_webhook_id/your_webhook_token
 Environment=BUDGET_DAILY=5.0
