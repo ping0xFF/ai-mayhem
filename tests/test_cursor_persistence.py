@@ -45,7 +45,7 @@ class TestCursorPersistence(unittest.IsolatedAsyncioTestCase):
         self.db_patcher.stop()
         os.unlink(self.temp_db.name)
 
-    @patch('nodes.config.load_monitored_wallets')
+    @patch('nodes.planner.load_monitored_wallets')
     async def test_cursor_persistence_between_runs(self, mock_load_wallets):
         """Test that cursors persist between planner runs."""
         mock_load_wallets.return_value = self.test_wallets
@@ -59,9 +59,10 @@ class TestCursorPersistence(unittest.IsolatedAsyncioTestCase):
         result1 = await planner_node(state1)
         
         # Verify wallets were seeded
-        self.assertIn("Seeding 2 monitored wallets", str(result1))
-        self.assertIn("wallet:0x1234567890abcdef1234567890abcdef12345678", result1.get("cursors", {}))
-        self.assertIn("wallet:0xabcdef1234567890abcdef1234567890abcdef12", result1.get("cursors", {}))
+        cursors = result1.get("cursors", {})
+        self.assertIn("wallet:0x1234567890abcdef1234567890abcdef12345678", cursors)
+        self.assertIn("wallet:0xabcdef1234567890abcdef1234567890abcdef12", cursors)
+        self.assertEqual(len([k for k in cursors.keys() if k.startswith("wallet:")]), 2)
         
         # Verify cursors were saved to database
         cursor1 = await get_cursor("wallet:0x1234567890abcdef1234567890abcdef12345678")
@@ -85,7 +86,7 @@ class TestCursorPersistence(unittest.IsolatedAsyncioTestCase):
         self.assertIn("wallet:0x1234567890abcdef1234567890abcdef12345678", result2.get("cursors", {}))
         self.assertIn("wallet:0xabcdef1234567890abcdef1234567890abcdef12", result2.get("cursors", {}))
 
-    @patch('nodes.config.load_monitored_wallets')
+    @patch('nodes.planner.load_monitored_wallets')
     async def test_cursor_loading_from_database(self, mock_load_wallets):
         """Test that planner loads cursors from database when state is empty."""
         mock_load_wallets.return_value = self.test_wallets
@@ -112,7 +113,7 @@ class TestCursorPersistence(unittest.IsolatedAsyncioTestCase):
         # Verify no seeding occurred
         self.assertNotIn("Seeding", str(result))
 
-    @patch('nodes.config.load_monitored_wallets')
+    @patch('nodes.planner.load_monitored_wallets')
     async def test_cursor_state_priority(self, mock_load_wallets):
         """Test that state cursors take priority over database cursors."""
         mock_load_wallets.return_value = self.test_wallets

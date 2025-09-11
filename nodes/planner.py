@@ -40,34 +40,48 @@ async def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
         )
         return {**state, "status": "capped"}
     
-    # Get current cursors
+    # Get current cursors and merge with database cursors
     cursors = state.get("cursors", {})
     current_time = int(datetime.now().timestamp())
 
-    # Seed wallet cursors if none exist
+    # Load existing cursors from database
+    monitored_wallets = load_monitored_wallets()
+    for wallet in monitored_wallets:
+        cursor_key = f"wallet:{wallet}"
+        if cursor_key not in cursors:
+            db_cursor = await get_cursor(cursor_key)
+            if db_cursor is not None:
+                cursors[cursor_key] = db_cursor
+
+    # Also load other cursors from database
+    for cursor_name in ["lp", "explore_metrics"]:
+        if cursor_name not in cursors:
+            db_cursor = await get_cursor(cursor_name)
+            if db_cursor is not None:
+                cursors[cursor_name] = db_cursor
+
+    # Seed wallet cursors if none exist (either in state or database)
     wallet_cursors = {k: v for k, v in cursors.items() if k.startswith("wallet:")}
-    if not wallet_cursors:
-        monitored_wallets = load_monitored_wallets()
-        if monitored_wallets:
-            formatter.log_node_progress(
-                "Planner",
-                f"Seeding {len(monitored_wallets)} monitored wallets..."
-            )
-            for wallet in monitored_wallets:
-                cursor_key = f"wallet:{wallet}"
-                # Create cursor if it doesn't exist (set to 0 to force immediate update)
-                if cursor_key not in cursors:
-                    await set_cursor(cursor_key, 0, f"Seeded cursor for monitored wallet {wallet}")
-                    cursors[cursor_key] = 0
-                    formatter.log_node_progress(
-                        "Planner",
-                        f"Seeded cursor for {wallet}"
-                    )
-        else:
-            formatter.log_node_progress(
-                "Planner",
-                "No monitored wallets configured - skipping wallet recon"
-            )
+    if not wallet_cursors and monitored_wallets:
+        formatter.log_node_progress(
+            "Planner",
+            f"Seeding {len(monitored_wallets)} monitored wallets..."
+        )
+        for wallet in monitored_wallets:
+            cursor_key = f"wallet:{wallet}"
+            # Create cursor if it doesn't exist (set to 0 to force immediate update)
+            if cursor_key not in cursors:
+                await set_cursor(cursor_key, 0, f"Seeded cursor for monitored wallet {wallet}")
+                cursors[cursor_key] = 0
+                formatter.log_node_progress(
+                    "Planner",
+                    f"Seeded cursor for {wallet}"
+                )
+    elif not monitored_wallets:
+        formatter.log_node_progress(
+            "Planner",
+            "No monitored wallets configured - skipping wallet recon"
+        )
 
     # Check wallet cursors (stale if >2h)
     for cursor_key, cursor_ts in cursors.items():
@@ -82,6 +96,7 @@ async def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 )
                 return {
                     **state,
+                    "cursors": cursors,
                     "selected_action": "wallet_recon",
                     "target_wallet": wallet,
                     "status": "working"
@@ -98,6 +113,7 @@ async def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
         )
         return {
             **state,
+            "cursors": cursors,
             "selected_action": "lp_recon",
             "status": "working"
         }
@@ -113,6 +129,7 @@ async def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
         )
         return {
             **state,
+            "cursors": cursors,
             "selected_action": "explore_metrics",
             "status": "working"
         }
@@ -124,4 +141,4 @@ async def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
         "All cursors fresh - no action needed",
         execution_time
     )
-    return {**state, "status": "completed"}
+    return {**state, "cursors": cursors, "status": "completed"}

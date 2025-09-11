@@ -1117,6 +1117,160 @@ This section outlines the coding standards and improvements needed to evolve thi
 11. **Performance**: Add caching and connection pooling
 12. **Deployment**: Create production deployment pipeline
 
+### **🏗️ Containerized Architecture (Future)**
+
+#### **Current Limitations**
+The existing single-threaded loop architecture has significant scaling limitations:
+
+- **Sequential Bottleneck**: One action at a time - can't monitor multiple wallets simultaneously
+- **Action Starvation**: Wallet monitoring (2h) can starve LP monitoring (6h) and metrics exploration (24h)
+- **Single Point of Failure**: If the main loop crashes, everything stops
+- **No Parallelism**: Can't scale to monitor hundreds of wallets efficiently
+
+#### **Proposed Containerized Architecture**
+
+**Option 1: Microservices with Docker Compose**
+```yaml
+# docker-compose.yml
+services:
+  wallet-monitor:
+    image: ai-mayhem/wallet-monitor
+    environment:
+      - WALLET_BATCH_SIZE=10
+    scale: 3  # Monitor 30 wallets in parallel
+    
+  lp-monitor:
+    image: ai-mayhem/lp-monitor
+    environment:
+      - LP_BATCH_SIZE=50
+    
+  metrics-explorer:
+    image: ai-mayhem/metrics-explorer
+    schedule: "0 */6 * * *"  # Every 6 hours
+    
+  coordinator:
+    image: ai-mayhem/coordinator
+    # Orchestrates all services
+```
+
+**Option 2: Event-Driven Architecture**
+```python
+# Event bus with async workers
+class WalletMonitor:
+    async def monitor_wallet(self, wallet_address):
+        # Independent wallet monitoring
+        pass
+
+class LPMonitor:
+    async def monitor_pools(self, pool_addresses):
+        # Independent LP monitoring
+        pass
+
+# Event-driven coordination
+event_bus.subscribe("wallet.activity", analyze_handler)
+event_bus.subscribe("lp.activity", analyze_handler)
+event_bus.subscribe("metrics.updated", brief_handler)
+```
+
+**Option 3: Kubernetes Jobs/CronJobs**
+```yaml
+# wallet-monitor-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: wallet-monitor
+spec:
+  template:
+    spec:
+      containers:
+      - name: wallet-monitor
+        image: ai-mayhem/wallet-monitor
+        env:
+        - name: WALLET_BATCH
+          value: "0x123...,0x456..."
+      restartPolicy: OnFailure
+
+---
+# lp-monitor-cronjob.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: lp-monitor
+spec:
+  schedule: "0 */6 * * *"  # Every 6 hours
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: lp-monitor
+            image: ai-mayhem/lp-monitor
+```
+
+#### **Benefits of Containerized Architecture**
+
+1. **Parallel Execution**: Monitor 10+ wallets simultaneously
+2. **Independent Scaling**: Scale wallet monitoring separately from LP monitoring
+3. **Fault Tolerance**: One wallet failure doesn't stop others
+4. **Resource Efficiency**: Only use resources when needed
+5. **Better Observability**: Each service can have its own metrics/logs
+6. **Easier Testing**: Test each service independently
+7. **Cloud-Native**: Deploy on any Kubernetes cluster
+8. **Scheduled Execution**: Proper cron-based scheduling
+
+#### **Migration Strategy**
+
+**Phase 1: Containerize Current Code (2-3 weeks)**
+- Wrap current planner/worker in Docker containers
+- Run multiple wallet monitors in parallel
+- Keep current logic, just parallelize execution
+- Add basic health checks and logging
+
+**Phase 2: Event-Driven Refactor (3-4 weeks)**
+- Replace polling with event-driven architecture
+- Add message queues (Redis/RabbitMQ)
+- Implement proper error handling and retries
+- Add distributed tracing
+
+**Phase 3: Cloud-Native Deployment (2-3 weeks)**
+- Deploy to Kubernetes
+- Add proper monitoring and alerting
+- Implement auto-scaling based on load
+- Add CI/CD pipeline
+
+#### **Recommended Architecture: Hybrid Approach**
+
+```python
+# Main coordinator service
+class AIMayhemCoordinator:
+    def __init__(self):
+        self.wallet_monitor = WalletMonitorService()
+        self.lp_monitor = LPMonitorService()
+        self.metrics_explorer = MetricsExplorerService()
+        self.event_bus = EventBus()
+    
+    async def start(self):
+        # Start all services independently
+        await asyncio.gather(
+            self.wallet_monitor.start(),
+            self.lp_monitor.start(),
+            self.metrics_explorer.start(),
+            self.event_bus.start()
+        )
+    
+    async def monitor_wallets(self, wallet_batch):
+        # Monitor multiple wallets in parallel
+        tasks = [self.wallet_monitor.monitor(wallet) for wallet in wallet_batch]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        return results
+```
+
+**This architecture enables:**
+- **Horizontal Scaling**: Add more wallet monitors as needed
+- **Independent Operations**: Each service runs on its own schedule
+- **Fault Isolation**: Service failures don't cascade
+- **Resource Optimization**: Each service can have different resource requirements
+
 ### **🔄 Continuous Improvement**
 
 - **Code Reviews**: All changes require peer review
