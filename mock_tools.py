@@ -402,7 +402,7 @@ def _fetch_wallet_activity_bitquery_mock(address: str, chain: str = "base", sinc
     time.sleep(0.15)
 
     # Generate deterministic mock events based on wallet address
-    wallet_hash = hashlib.md5(address.encode()).hexdigest()
+    wallet_hash = hashlib.sha256(address.encode()).hexdigest()
     wallet_seed = int(wallet_hash[:8], 16) % 1000
 
     mock_events = []
@@ -417,14 +417,14 @@ def _fetch_wallet_activity_bitquery_mock(address: str, chain: str = "base", sinc
         event_type = ["lp_add", "lp_remove", "swap", "transfer"][wallet_seed % 4]
 
         event = {
-            "ts": event_ts,
+            "timestamp": event_ts,  # Using timestamp instead of ts for consistency with analyze node
             "chain": chain,
             "type": event_type,
             "wallet": address,
-            "tx": f"0x{hashlib.md5(f'{address}_{i}'.encode()).hexdigest()[:64]}",
+            "tx": f"0x{hashlib.sha256(f'{address}_{i}'.encode()).hexdigest()}",  # Full 32-byte hash (66 chars total)
             "raw": {
                 "transaction": {
-                    "hash": f"0x{hashlib.md5(f'{address}_{i}'.encode()).hexdigest()[:64]}",
+                    "hash": f"0x{hashlib.sha256(f'{address}_{i}'.encode()).hexdigest()}",  # Full hash in raw data too
                     "block": {
                         "timestamp": {"unixtime": event_ts},
                         "number": 1234567 + i
@@ -433,20 +433,20 @@ def _fetch_wallet_activity_bitquery_mock(address: str, chain: str = "base", sinc
                 "log": {
                     "index": i,
                     "topics": ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"],
-                    "data": f"0x{hashlib.md5(f'{address}_{event_type}_{i}'.encode()).hexdigest()}"
+                    "data": f"0x{hashlib.sha256(f'{address}_{event_type}_{i}'.encode()).hexdigest()}"
                 }
             }
         }
 
         # Add pool for LP events
         if event_type in ["lp_add", "lp_remove"]:
-            pool_address = f"0x{hashlib.md5(f'pool_{wallet_seed}_{i}'.encode()).hexdigest()[:40]}"
+            pool_address = f"0x{hashlib.sha256(f'pool_{wallet_seed}_{i}'.encode()).hexdigest()[:40]}"
             event["pool"] = pool_address
             event["raw"]["pool"] = pool_address
             # Add USD value for LP events (nullable)
             event["usd"] = (wallet_seed + i * 100) * 1.5 if wallet_seed % 2 == 0 else None
         elif event_type == "swap":
-            event["pool"] = f"0x{hashlib.md5(f'pool_{wallet_seed}_{i}'.encode()).hexdigest()[:40]}"
+            event["pool"] = f"0x{hashlib.sha256(f'pool_{wallet_seed}_{i}'.encode()).hexdigest()[:40]}"
             event["usd"] = (wallet_seed + i * 50) * 2.0
 
         # Add provenance (matching test expectations)

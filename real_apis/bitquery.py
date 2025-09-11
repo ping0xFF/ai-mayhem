@@ -21,11 +21,7 @@ load_dotenv()
 BITQUERY_ENDPOINT = "https://streaming.bitquery.io/graphql"
 BITQUERY_ACCESS_TOKEN = os.getenv("BITQUERY_ACCESS_TOKEN") or os.getenv("BITQUERY_API_KEY")  # Support both naming conventions
 
-# Debug: Print token status
-if BITQUERY_ACCESS_TOKEN:
-    print(f"✅ BITQUERY_ACCESS_TOKEN found: {BITQUERY_ACCESS_TOKEN[:10]}... (length: {len(BITQUERY_ACCESS_TOKEN)})")
-else:
-    print("❌ BITQUERY_ACCESS_TOKEN not found. Set BITQUERY_ACCESS_TOKEN=your_access_token in .env")
+# Token status will be checked in BitqueryClient.__init__
 REQUEST_TIMEOUT = 60  # seconds - increased for GraphQL queries
 MAX_RETRIES = 3
 BASE_DELAY = 1.0  # seconds
@@ -36,12 +32,25 @@ class BitqueryClient:
     """Live Bitquery GraphQL client for wallet activity."""
 
     def __init__(self, access_token: str = None, timeout: int = REQUEST_TIMEOUT):
-        self.access_token = access_token or BITQUERY_ACCESS_TOKEN
-        if not self.access_token:
+        """Initialize Bitquery client with access token and timeout."""
+        # First try explicit access token
+        if access_token:
+            self.access_token = access_token
+            print(f"    ✅ Using Bitquery access token: {access_token[:10]}... (length: {len(access_token)})")
+        # Then try environment BITQUERY_ACCESS_TOKEN
+        elif os.getenv("BITQUERY_ACCESS_TOKEN"):
+            self.access_token = os.getenv("BITQUERY_ACCESS_TOKEN")
+            print(f"    ✅ Using Bitquery access token: {self.access_token[:10]}... (length: {len(self.access_token)})")
+        # Finally try environment BITQUERY_API_KEY
+        elif os.getenv("BITQUERY_API_KEY"):
+            self.access_token = os.getenv("BITQUERY_API_KEY")
+            print(f"    ✅ Using Bitquery API key: {self.access_token[:10]}... (length: {len(self.access_token)})")
+        # No token found
+        else:
+            self.access_token = None
+            print("    ❌ No Bitquery access token found. Set BITQUERY_ACCESS_TOKEN in .env")
             raise ValueError("BITQUERY_ACCESS_TOKEN environment variable is required (or BITQUERY_API_KEY for backward compatibility)")
 
-        # Debug logging for token
-        print(f"    🔑 Using access token: {self.access_token[:10]}... (length: {len(self.access_token)})")
 
         self.endpoint = BITQUERY_ENDPOINT
         self.timeout = timeout
