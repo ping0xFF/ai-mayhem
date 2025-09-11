@@ -38,13 +38,13 @@ MAX_DELAY = 60.0  # seconds max per run
 
 def _should_log_verbose() -> bool:
     """Check if verbose API logging is enabled."""
-    from ..nodes.config import should_log_verbose
+    from nodes.config import should_log_verbose
     return should_log_verbose()
 
 
 def _should_log_malformed() -> bool:
     """Check if malformed transaction logging is enabled."""
-    from ..nodes.config import should_log_malformed
+    from nodes.config import should_log_malformed
     return should_log_malformed()
 
 
