@@ -58,12 +58,12 @@ async def analyze_node(state: Dict[str, Any]) -> Dict[str, Any]:
         if event.get("details"):
             value_dict["details"] = event["details"]
         
-        # Create normalized event
+        # Create normalized event with proper field mapping
         normalized_event = NormalizedEvent(
-            event_id=event.get("txHash", f"event_{int(time.time())}"),
+            event_id=event.get("tx", f"event_{int(time.time())}"),  # Covalent uses "tx" not "txHash"
             wallet=event.get("wallet"),
-            event_type=event.get("kind", "unknown"),
-            pool=event.get("pool"),
+            event_type=event.get("type", event.get("kind", "unknown")),  # Try "type" first, fallback to "kind"
+            pool=event.get("pool"),  # May be None for regular transactions
             value=value_dict,
             timestamp=event.get("timestamp", int(time.time())),
             source_id=source_id,
@@ -74,8 +74,8 @@ async def analyze_node(state: Dict[str, Any]) -> Dict[str, Any]:
         await normalize_event(normalized_event)
         normalized_events.append(normalized_event)
     
-    # Count events by kind
-    event_counts = Counter(e.get("kind", "unknown") for e in recent_events)
+    # Count events by type/kind (handle both field names for compatibility)
+    event_counts = Counter(e.get("type", e.get("kind", "unknown")) for e in recent_events)
     
     # Identify top pools by event count
     pool_counts = Counter(e.get("pool", "unknown") for e in recent_events)
@@ -97,12 +97,12 @@ async def analyze_node(state: Dict[str, Any]) -> Dict[str, Any]:
     
     # LP-specific signals
     lp_signals = {}
-    lp_events = [e for e in recent_events if e.get("kind") in ["lp_add", "lp_remove"]]
+    lp_events = [e for e in recent_events if e.get("type", e.get("kind", "")) in ["lp_add", "lp_remove"]]
     
     if lp_events:
         # Net liquidity delta (adds - removes)
-        adds = sum(1 for e in lp_events if e.get("kind") == "lp_add")
-        removes = sum(1 for e in lp_events if e.get("kind") == "lp_remove")
+        adds = sum(1 for e in lp_events if e.get("type", e.get("kind", "")) == "lp_add")
+        removes = sum(1 for e in lp_events if e.get("type", e.get("kind", "")) == "lp_remove")
         net_delta = adds - removes
         lp_signals["net_liquidity_delta_24h"] = net_delta
         
@@ -120,7 +120,7 @@ async def analyze_node(state: Dict[str, Any]) -> Dict[str, Any]:
         for event in lp_events:
             details = event.get("details", {})
             if details.get("lp_tokens_delta"):
-                if event.get("kind") == "lp_add":
+                if event.get("type", event.get("kind", "")) == "lp_add":
                     total_add_value += abs(details["lp_tokens_delta"])
                 else:
                     total_remove_value += abs(details["lp_tokens_delta"])
