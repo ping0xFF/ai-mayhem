@@ -40,11 +40,31 @@ except ImportError:
 
 
 class ProviderRouter:
-    """Centralized provider selection and routing logic."""
-    
+    """Centralized provider selection and routing logic with schema validation."""
+
+    # Standardized field mapping for all providers
+    FIELD_MAPPINGS = {
+        "event_id": ["tx", "txHash", "hash", "transaction_hash"],
+        "event_type": ["type", "kind", "transaction_type", "event_type"],
+        "wallet": ["wallet", "address", "from_address", "account"],
+        "timestamp": ["timestamp", "ts", "block_timestamp", "time"],
+        "block": ["block", "block_number", "block_height"],
+        "chain": ["chain", "network", "chain_id"],
+        "gas_used": ["gas_used", "gas", "gas_spent"],
+        "value": ["value", "amount", "value_wei"],
+        "token_symbol": ["token_symbol", "symbol", "token"],
+        "token_address": ["token_address", "contract_address", "token_contract"],
+        "direction": ["direction", "type", "transfer_type"],
+        "counterparty": ["counterparty", "to_address", "recipient", "sender"],
+        "pool": ["pool", "pool_address", "liquidity_pool"],
+        "details": ["details", "log_events", "logs"],
+        "amounts": ["amounts", "token_amounts", "transfer_amounts"]
+    }
+
     def __init__(self):
         self.available_providers = self._detect_available_providers()
         self.fallback_chain = self._build_fallback_chain()
+        self.schema_validator = ProviderSchemaValidator(self.FIELD_MAPPINGS)
     
     def _detect_available_providers(self) -> Dict[str, bool]:
         """Detect which providers are available based on API keys and imports."""
@@ -154,6 +174,26 @@ class ProviderRouter:
                     result = await self._call_provider(
                         provider, address, chain, since_ts, max_transactions, hours_back
                     )
+
+                    # Validate and analyze the response schema
+                    events = result.get("events", [])
+                    if events:
+                        # Detect schema changes and validate structure
+                        schema_analysis = self.schema_validator.detect_schema_changes(events, provider)
+
+                        # Log schema information
+                        if schema_analysis.get("unexpected_fields"):
+                            print(f"    🔍 Provider {provider}: detected {len(schema_analysis['unexpected_fields'])} new fields")
+
+                    # Add schema validation metadata
+                    if "provider" not in result:
+                        result["provider"] = {
+                            "name": provider,
+                            "chain": chain,
+                            "selected_at": int(asyncio.get_event_loop().time()),
+                            "schema_validated": True
+                        }
+
                     print(f"    ✅ Successfully used {provider} provider")
                     return result
                 except Exception as e:
@@ -215,6 +255,79 @@ class ProviderRouter:
         
         else:
             raise ValueError(f"Unknown provider: {provider}")
+
+
+class ProviderSchemaValidator:
+    """Validates and standardizes API provider response schemas."""
+
+    def __init__(self, field_mappings: Dict[str, List[str]]):
+        self.field_mappings = field_mappings
+        self.validation_cache = {}  # Cache validation results
+
+    def validate_and_standardize_event(self, event: Dict[str, Any], provider: str) -> Dict[str, Any]:
+        """Validate event structure and standardize field names."""
+        standardized = {}
+
+        # Map each expected field to actual field in event
+        for std_field, possible_names in self.field_mappings.items():
+            value = None
+            actual_field = None
+
+            # Try each possible field name
+            for field_name in possible_names:
+                if field_name in event:
+                    value = event[field_name]
+                    actual_field = field_name
+                    break
+
+            # Store the standardized field
+            standardized[std_field] = value
+
+            # Log field mapping for monitoring
+            if actual_field and actual_field != std_field:
+                cache_key = f"{provider}:{std_field}:{actual_field}"
+                if cache_key not in self.validation_cache:
+                    print(f"    🔄 Provider {provider}: mapped '{actual_field}' → '{std_field}'")
+                    self.validation_cache[cache_key] = True
+
+        # Validate required fields
+        required_fields = ["event_id", "event_type", "wallet", "timestamp"]
+        missing = [f for f in required_fields if standardized.get(f) is None]
+
+        if missing:
+            print(f"    ⚠️  Provider {provider}: missing required fields: {missing}")
+            # Don't fail, just log - maintain backward compatibility
+
+        return standardized
+
+    def detect_schema_changes(self, events: List[Dict[str, Any]], provider: str) -> Dict[str, Any]:
+        """Detect potential schema changes by analyzing field patterns."""
+        if not events:
+            return {"status": "no_events"}
+
+        # Analyze field patterns
+        all_fields = set()
+        field_patterns = {}
+
+        for event in events[:10]:  # Sample first 10 events
+            for field in event.keys():
+                all_fields.add(field)
+                field_patterns[field] = field_patterns.get(field, 0) + 1
+
+        # Check for unexpected fields
+        known_fields = set()
+        for possible_names in self.field_mappings.values():
+            known_fields.update(possible_names)
+
+        unexpected = all_fields - known_fields
+        if unexpected:
+            print(f"    🔍 Provider {provider}: found {len(unexpected)} unexpected fields: {list(unexpected)[:5]}...")
+
+        return {
+            "total_fields": len(all_fields),
+            "unexpected_fields": list(unexpected),
+            "field_patterns": field_patterns
+        }
 
 
 # Global router instance

@@ -21,6 +21,57 @@ from real_apis.covalent import _classify_transaction as classify_covalent
 class TestFieldConsistency(unittest.IsolatedAsyncioTestCase):
     """Test field name consistency across components."""
 
+    async def test_schema_validation_system(self):
+        """Test the new schema validation system works correctly."""
+        from real_apis.provider_router import ProviderRouter
+
+        router = ProviderRouter()
+
+        # Test that schema validator is initialized
+        self.assertIsNotNone(router.schema_validator)
+        self.assertIsNotNone(router.schema_validator.field_mappings)
+
+        # Test field mappings are comprehensive
+        expected_fields = ['event_id', 'event_type', 'wallet', 'timestamp']
+        for field in expected_fields:
+            self.assertIn(field, router.schema_validator.field_mappings)
+
+    async def test_provider_field_mapping_robustness(self):
+        """Test that field mapping works across different provider formats."""
+        from real_apis.provider_router import ProviderSchemaValidator
+
+        validator = ProviderSchemaValidator({
+            "event_id": ["tx", "txHash", "hash"],
+            "event_type": ["type", "kind", "transaction_type"],
+            "wallet": ["wallet", "address"],
+            "timestamp": ["timestamp", "ts", "time"]
+        })
+
+        # Test Covalent-style event (uses 'type', 'tx')
+        covalent_event = {
+            "type": "transaction",
+            "tx": "0x123...",
+            "wallet": "0xabc...",
+            "timestamp": 1234567890
+        }
+
+        standardized = validator.validate_and_standardize_event(covalent_event, "covalent")
+        self.assertEqual(standardized["event_id"], "0x123...")
+        self.assertEqual(standardized["event_type"], "transaction")
+
+        # Test mock-style event (uses 'kind', 'txHash')
+        mock_event = {
+            "kind": "transfer",
+            "txHash": "0x456...",
+            "address": "0xdef...",
+            "ts": 1234567891
+        }
+
+        standardized = validator.validate_and_standardize_event(mock_event, "mock")
+        self.assertEqual(standardized["event_id"], "0x456...")
+        self.assertEqual(standardized["event_type"], "transfer")
+        self.assertEqual(standardized["timestamp"], 1234567891)
+
     async def test_timestamp_field_consistency(self):
         """Test that timestamp fields are consistent between providers and analyze."""
         
