@@ -67,7 +67,7 @@ class TestLPBriefGating(unittest.IsolatedAsyncioTestCase):
         # Should emit brief due to high LP activity score
         self.assertNotIn("brief_skipped", result)
         self.assertIn("brief_text", result)
-        self.assertIn("next_watchlist", result)
+        self.assertIn("discovered_pools", result)
         self.assertEqual(result["status"], "memory")
         
         # Check brief content
@@ -76,10 +76,10 @@ class TestLPBriefGating(unittest.IsolatedAsyncioTestCase):
         self.assertIn("net delta 1", brief_text)
         self.assertIn("activity score 1.00", brief_text)
         
-        # Check next watchlist includes LP pools
-        next_watchlist = result["next_watchlist"]
-        self.assertGreater(len(next_watchlist), 0)
-        lp_pools = [pool for pool in next_watchlist if "(LP)" in pool]
+        # Check discovered pools includes LP pools
+        discovered_pools = result["discovered_pools"]
+        self.assertGreater(len(discovered_pools), 0)
+        lp_pools = [pool for pool in discovered_pools if "(LP)" in pool]
         self.assertGreater(len(lp_pools), 0)
     
     async def test_brief_gate_skip_with_low_lp_activity(self):
@@ -208,14 +208,14 @@ class TestLPBriefGating(unittest.IsolatedAsyncioTestCase):
         self.assertIn("churn rate 0.80", brief_text)
         self.assertIn("activity score 1.00", brief_text)
         
-        # Check next watchlist includes LP pools
-        next_watchlist = result["next_watchlist"]
-        lp_pools = [pool for pool in next_watchlist if "(LP)" in pool]
+        # Check discovered pools includes LP pools
+        discovered_pools = result["discovered_pools"]
+        lp_pools = [pool for pool in discovered_pools if "(LP)" in pool]
         self.assertGreater(len(lp_pools), 0)
         
         # Should include top pools with LP designation
-        self.assertIn("WETH/USDC (LP)", next_watchlist)
-        self.assertIn("DEGEN/WETH (LP)", next_watchlist)
+        self.assertIn("WETH/USDC (LP)", discovered_pools)
+        self.assertIn("DEGEN/WETH (LP)", discovered_pools)
     
     async def test_brief_provenance_chain(self):
         """Test that brief maintains full provenance chain."""

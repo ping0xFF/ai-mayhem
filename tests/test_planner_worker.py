@@ -375,7 +375,7 @@ class TestPlannerWorker(unittest.IsolatedAsyncioTestCase):
         result = await brief_node(state)
         self.assertEqual(result["status"], "memory")
         self.assertIn("brief_text", result)
-        self.assertIn("next_watchlist", result)
+        self.assertIn("discovered_pools", result)
         
         # Test case 2: Low activity - should skip
         state["last24h_counts"] = {"swap": 2, "lp_add": 0, "lp_remove": 0}

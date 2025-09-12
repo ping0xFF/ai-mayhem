@@ -28,7 +28,7 @@ async def brief_node(state: Dict[str, Any]) -> Dict[str, Any]:
     Enhanced brief node with gating logic and LLM integration.
     
     Emits brief only if (new_events ≥ 5 OR max_signal ≥ 0.6) AND cooldown passed.
-    Includes optional next_watchlist and LLM-generated insights.
+    Includes optional discovered pools and LLM-generated insights.
     """
     start_time = time.time()
     formatter.log_node_progress("Brief", "Checking if brief should be emitted...")
@@ -122,26 +122,26 @@ async def brief_node(state: Dict[str, Any]) -> Dict[str, Any]:
         brief_text += f"General signals: volume={signals.get('volume_signal', 0):.2f}, "
         brief_text += f"activity={signals.get('activity_signal', 0):.2f}. "
     
-    # Generate next watchlist
-    next_watchlist = []
+    # Generate pool suggestions from discovered activity
+    discovered_pools = []
     if top_pools:
-        next_watchlist.extend(top_pools[:2])
+        discovered_pools.extend(top_pools[:2])
     
     # Add LP-specific pools with high activity
     if lp_signals and lp_signals.get("pool_activity_score", 0) > 0.5:
-        # Add pools with high LP activity to watchlist
+        # Add pools with high LP activity to suggestions
         if top_pools:
-            next_watchlist.extend([f"{pool} (LP)" for pool in top_pools[:2]])
+            discovered_pools.extend([f"{pool} (LP)" for pool in top_pools[:2]])
     
     # Add any high-signal pools from raw data
     raw_data = state.get("raw_data", {})
     if "metrics" in raw_data:
         metrics = raw_data["metrics"]
         top_pool = metrics.get("key_values", {}).get("top_pool")
-        if top_pool and top_pool not in next_watchlist:
-            next_watchlist.append(top_pool)
+        if top_pool and top_pool not in discovered_pools:
+            discovered_pools.append(top_pool)
     
-    brief_text += f"Next watchlist: {', '.join(next_watchlist) if next_watchlist else 'none'}."
+    brief_text += f"Discovered pools: {', '.join(discovered_pools) if discovered_pools else 'none'}."
     
     # Initialize LLM fields
     llm_summary = None
@@ -207,7 +207,7 @@ async def brief_node(state: Dict[str, Any]) -> Dict[str, Any]:
         timestamp=current_time,
         summary_text=brief_text,
         signals=signals,
-        next_watchlist=next_watchlist,
+        discovered_pools=discovered_pools,
         source_ids=source_ids,
         event_count=total_events,
         summary_text_llm=llm_summary if BRIEF_MODE in ["llm", "both"] else None,
@@ -223,14 +223,14 @@ async def brief_node(state: Dict[str, Any]) -> Dict[str, Any]:
     execution_time = time.time() - start_time
     formatter.log_node_progress(
         "Brief",
-        f"Generated {len(brief_text)} char brief, {len(next_watchlist)} watchlist items",
+        f"Generated {len(brief_text)} char brief, {len(discovered_pools)} discovered pools",
         execution_time
     )
     
     result = {
         **state,
         "brief_text": brief_text,
-        "next_watchlist": next_watchlist,
+        "discovered_pools": discovered_pools,
         "last_brief_at": current_time,
         "status": "memory"
     }

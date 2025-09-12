@@ -196,8 +196,23 @@ async def fetch_wallet_activity_covalent(
             for tx in transactions:
                 try:
                     # Extract basic transaction info
+                    # Try multiple timestamp fields from Covalent API
+                    timestamp_raw = (tx.get("block_signed_at_unix") or 
+                                   tx.get("block_signed_at") or 
+                                   current_ts)  # Fallback to current time
+                    
+                    # Convert timestamp to Unix integer if it's a string
+                    if isinstance(timestamp_raw, str):
+                        try:
+                            # Parse ISO format timestamp
+                            dt = datetime.fromisoformat(timestamp_raw.replace('Z', '+00:00'))
+                            timestamp = int(dt.timestamp())
+                        except (ValueError, TypeError):
+                            timestamp = current_ts  # Fallback to current time
+                    else:
+                        timestamp = timestamp_raw
                     event = {
-                        "ts": tx.get("block_signed_at_unix", 0),
+                        "timestamp": timestamp,
                         "chain": "base",
                         "type": _classify_transaction(tx),
                         "wallet": address,

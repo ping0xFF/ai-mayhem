@@ -60,7 +60,7 @@ class AgentState(TypedDict):
     top_pools: List[str]  # Top pools from analyze
     signals: Dict[str, float]  # Signals from analyze
     brief_text: Optional[str]  # Brief text if emitted
-    next_watchlist: List[str]  # Next watchlist from brief
+    discovered_pools: List[str]  # Discovered pools from brief
     last_brief_at: int  # Last brief timestamp
 
 
@@ -493,7 +493,7 @@ class LangGraphAgent:
             "top_pools": [],
             "signals": {},
             "brief_text": None,
-            "next_watchlist": [],
+            "discovered_pools": [],
             "last_brief_at": 0
         }
         

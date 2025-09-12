@@ -339,7 +339,7 @@ async def fetch_wallet_activity_bitquery_live(
     for transfer in all_transfers:
         try:
             event = {
-                "ts": transfer["block"]["timestamp"]["unixtime"],
+                "timestamp": transfer["block"]["timestamp"]["unixtime"],
                 "chain": chain,
                 "type": "transfer",
                 "wallet": address,
@@ -383,7 +383,7 @@ async def fetch_wallet_activity_bitquery_live(
                 continue
 
             event = {
-                "ts": trade["block"]["timestamp"]["unixtime"],
+                "timestamp": trade["block"]["timestamp"]["unixtime"],
                 "chain": chain,
                 "type": "swap",
                 "wallet": address,

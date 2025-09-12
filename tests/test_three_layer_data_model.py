@@ -95,7 +95,7 @@ class TestThreeLayerDataModel(unittest.IsolatedAsyncioTestCase):
             timestamp=1234567890,
             summary_text="Test brief summary",
             signals={"volume_signal": 0.8, "activity_signal": 0.6},
-            next_watchlist=["WETH/USDC", "DEGEN/WETH"],
+            discovered_pools=["WETH/USDC", "DEGEN/WETH"],
             source_ids=["test_response_1", "test_response_2"],
             event_count=5
         )
@@ -135,7 +135,7 @@ class TestThreeLayerDataModel(unittest.IsolatedAsyncioTestCase):
             timestamp=1234567890,
             summary_text="Test brief",
             signals={"volume_signal": 0.8},
-            next_watchlist=["WETH/USDC"],
+            discovered_pools=["WETH/USDC"],
             source_ids=["source_1"],
             event_count=1
         )
@@ -201,7 +201,7 @@ class TestThreeLayerDataModel(unittest.IsolatedAsyncioTestCase):
             timestamp=1234567890,
             summary_text="Old brief",
             signals={"volume_signal": 0.8},
-            next_watchlist=["WETH/USDC"],
+            discovered_pools=["WETH/USDC"],
             source_ids=["old_scratch"],
             event_count=1
         )
@@ -239,7 +239,7 @@ class TestThreeLayerDataModel(unittest.IsolatedAsyncioTestCase):
             timestamp=1234567890,
             summary_text="Convenience brief",
             signals={"volume_signal": 0.8},
-            next_watchlist=["WETH/USDC"],
+            discovered_pools=["WETH/USDC"],
             source_ids=["conv_test"],
             event_count=1
         )

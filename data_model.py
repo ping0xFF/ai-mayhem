@@ -55,7 +55,7 @@ class Artifact:
     timestamp: int  # Unix timestamp
     summary_text: str  # Human-readable summary
     signals: Dict[str, float]  # Computed signals
-    next_watchlist: List[str]  # Suggested items to watch
+    discovered_pools: List[str]  # Pools discovered from wallet activity
     source_ids: List[str]  # Points back to scratch JSON rows
     event_count: int  # Number of events processed
     # LLM brief fields
@@ -124,7 +124,7 @@ class ThreeLayerDataModel:
                 timestamp INTEGER NOT NULL,
                 summary_text TEXT NOT NULL,
                 signals TEXT NOT NULL,  -- JSON string
-                next_watchlist TEXT NOT NULL,  -- JSON array string
+                discovered_pools TEXT NOT NULL,  -- JSON array string
                 source_ids TEXT NOT NULL,  -- JSON array string
                 event_count INTEGER NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -138,6 +138,19 @@ class ThreeLayerDataModel:
             await conn.execute("ALTER TABLE artifacts ADD COLUMN llm_validation TEXT")  # JSON string for validation results
             await conn.execute("ALTER TABLE artifacts ADD COLUMN llm_model TEXT")  # Model alias used
             await conn.execute("ALTER TABLE artifacts ADD COLUMN llm_tokens INTEGER")  # Token usage
+            
+            # Migration: Rename next_watchlist to discovered_pools
+            try:
+                # Check if next_watchlist column exists
+                cursor = await conn.execute("PRAGMA table_info(artifacts)")
+                columns = await cursor.fetchall()
+                column_names = [col[1] for col in columns]
+                
+                if "next_watchlist" in column_names and "discovered_pools" not in column_names:
+                    await conn.execute("ALTER TABLE artifacts RENAME COLUMN next_watchlist TO discovered_pools")
+            except Exception:
+                # Column might already be renamed or not exist
+                pass
         except:
             # Columns already exist, ignore
             pass
@@ -341,7 +354,7 @@ class ThreeLayerDataModel:
         
         try:
             signals_json = json.dumps(artifact.signals)
-            watchlist_json = json.dumps(artifact.next_watchlist)
+            discovered_pools_json = json.dumps(artifact.discovered_pools)
             source_ids_json = json.dumps(artifact.source_ids)
             
             # Handle LLM fields
@@ -350,12 +363,12 @@ class ThreeLayerDataModel:
             
             await conn.execute("""
                 INSERT OR REPLACE INTO artifacts 
-                (artifact_id, timestamp, summary_text, signals, next_watchlist, source_ids, event_count,
+                (artifact_id, timestamp, summary_text, signals, discovered_pools, source_ids, event_count,
                  summary_text_llm, llm_struct, llm_validation, llm_model, llm_tokens)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 artifact.artifact_id, artifact.timestamp, artifact.summary_text,
-                signals_json, watchlist_json, source_ids_json, artifact.event_count,
+                signals_json, discovered_pools_json, source_ids_json, artifact.event_count,
                 artifact.summary_text_llm, llm_struct_json, llm_validation_json,
                 artifact.llm_model, artifact.llm_tokens
             ))
@@ -374,18 +387,18 @@ class ThreeLayerDataModel:
         try:
             artifacts = []
             async with conn.execute("""
-                SELECT artifact_id, timestamp, summary_text, signals, next_watchlist, source_ids, event_count,
+                SELECT artifact_id, timestamp, summary_text, signals, discovered_pools, source_ids, event_count,
                        summary_text_llm, llm_struct, llm_validation, llm_model, llm_tokens
                 FROM artifacts 
                 ORDER BY timestamp DESC 
                 LIMIT ?
             """, (limit,)) as cursor:
                 async for row in cursor:
-                    (artifact_id, timestamp, summary_text, signals_json, watchlist_json, source_ids_json, event_count,
+                    (artifact_id, timestamp, summary_text, signals_json, discovered_pools_json, source_ids_json, event_count,
                      summary_text_llm, llm_struct_json, llm_validation_json, llm_model, llm_tokens) = row
                     try:
                         signals = json.loads(signals_json)
-                        next_watchlist = json.loads(watchlist_json)
+                        discovered_pools = json.loads(discovered_pools_json)
                         source_ids = json.loads(source_ids_json)
                         llm_struct = json.loads(llm_struct_json) if llm_struct_json else None
                         llm_validation = json.loads(llm_validation_json) if llm_validation_json else None
@@ -395,7 +408,7 @@ class ThreeLayerDataModel:
                             timestamp=timestamp,
                             summary_text=summary_text,
                             signals=signals,
-                            next_watchlist=next_watchlist,
+                            discovered_pools=discovered_pools,
                             source_ids=source_ids,
                             event_count=event_count,
                             summary_text_llm=summary_text_llm,
