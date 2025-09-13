@@ -77,9 +77,21 @@ async def analyze_node(state: Dict[str, Any]) -> Dict[str, Any]:
     # Count events by type/kind (handle both field names for compatibility)
     event_counts = Counter(e.get("type", e.get("kind", "unknown")) for e in recent_events)
     
-    # Identify top pools by event count
-    pool_counts = Counter(e.get("pool", "unknown") for e in recent_events)
-    top_pools = [pool for pool, count in pool_counts.most_common(5)]
+    # Identify top pools by event count (handle multiple data sources)
+    pool_counts = Counter()
+    for e in recent_events:
+        # Try multiple ways to find pool/contract addresses
+        pool = (e.get("pool") or  # Legacy format
+                e.get("token_address") or  # Alchemy format
+                e.get("counterparty") or  # Contract addresses
+                e.get("raw", {}).get("to") or  # Raw transaction data
+                "unknown")
+        
+        # Filter out invalid addresses
+        if pool and pool != "unknown" and pool != "0x0000000000000000000000000000000000000000":
+            pool_counts[pool] += 1
+    
+    top_pools = [pool for pool, count in pool_counts.most_common(5) if pool != "unknown"]
     
     # Compute base signals
     total_events = len(recent_events)
@@ -147,15 +159,20 @@ async def analyze_node(state: Dict[str, Any]) -> Dict[str, Any]:
         wallet_signals["net_lp_usd_24h"] = net_lp_usd
 
         # new_pools_touched_24h: Distinct pool addresses from recent events
-        # Handle both legacy pool field and new contract addresses
+        # Handle multiple data sources (Alchemy, Covalent, etc.)
         all_pools = set()
         for event in recent_events:
-            # Try multiple ways to find pool addresses
-            pool = (event.get("pool") or
-                   event.get("token_address") or
-                   event.get("raw", {}).get("covalent_tx", {}).get("to_address"))
+            # Try multiple ways to find pool/contract addresses
+            pool = (event.get("pool") or  # Legacy format
+                   event.get("token_address") or  # Alchemy format
+                   event.get("counterparty") or  # Contract addresses
+                   event.get("raw", {}).get("to") or  # Raw transaction data
+                   event.get("raw", {}).get("covalent_tx", {}).get("to_address"))  # Covalent format
 
-            if pool and pool != "unknown" and pool != "0x0000000000000000000000000000000000000000":
+            # Filter out invalid addresses and common non-pool addresses
+            if (pool and pool != "unknown" and 
+                pool != "0x0000000000000000000000000000000000000000" and
+                len(pool) == 42 and pool.startswith("0x")):
                 all_pools.add(pool)
         wallet_signals["new_pools_touched_24h"] = list(all_pools)
 

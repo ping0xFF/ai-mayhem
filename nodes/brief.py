@@ -112,7 +112,8 @@ async def brief_node(state: Dict[str, Any]) -> Dict[str, Any]:
         if isinstance(provider_info, dict):
             source_name = provider_info.get("name", "unknown")
         else:
-            source_name = "bitquery"  # Legacy format
+            # Use the actual provider name from raw_data, not hardcoded "bitquery"
+            source_name = provider_info if provider_info else "unknown"
 
         brief_text += f"Wallet recon via {source_name}: net LP USD ${wallet_signals.get('net_lp_usd_24h', 0):.2f}, "
         new_pools = wallet_signals.get('new_pools_touched_24h', [])

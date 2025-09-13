@@ -135,7 +135,7 @@ async def fetch_wallet_activity_alchemy_live(
             try:
                 # Extract basic transaction info
                 event = {
-                    "timestamp": current_ts,  # Alchemy doesn't provide timestamp in transfers
+                    "ts": current_ts,  # Alchemy doesn't provide timestamp in transfers
                     "chain": "base",
                     "type": _classify_transaction(tx),
                     "wallet": address,

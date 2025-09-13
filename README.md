@@ -1201,6 +1201,7 @@ This section outlines the coding standards and improvements needed to evolve thi
 The existing single-threaded loop architecture has significant scaling limitations:
 
 - **Sequential Bottleneck**: One action at a time - can't monitor multiple wallets simultaneously
+- **Single Wallet Processing**: Only processes one wallet per run - with N wallets, requires N runs minimum to process all wallets
 - **Action Starvation**: Wallet monitoring (2h) can starve LP monitoring (6h) and metrics exploration (24h)
 - **Single Point of Failure**: If the main loop crashes, everything stops
 - **No Parallelism**: Can't scale to monitor hundreds of wallets efficiently
@@ -1503,6 +1504,22 @@ python cli.py run --mode=wallet-brief --wallets="0x123...,0x456..."
 export DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/your_webhook_id/your_webhook_token"
 python cli.py run --mode=wallet-brief
 ```
+
+### **⚠️ Current Limitation: Single Wallet Processing**
+
+**Important**: The current architecture processes **one wallet per run**. With N configured wallets, you need N runs minimum to process all wallets.
+
+**Current Behavior:**
+- **Run 1**: Processes wallet A
+- **Run 2**: Processes wallet B  
+- **Run 3**: Processes wallet A again (if cursor is stale)
+
+**Recommended Run Frequency:**
+- **2 wallets**: Run every 2-4 hours
+- **5 wallets**: Run every 1-2 hours
+- **10+ wallets**: Run every 30-60 minutes
+
+**Future Solution**: See "Containerized Architecture (Future)" section for parallel wallet processing.
 
 ### **Cron Job Setup**
 

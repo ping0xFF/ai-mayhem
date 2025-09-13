@@ -83,24 +83,32 @@ async def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "No monitored wallets configured - skipping wallet recon"
         )
 
-    # Check wallet cursors (stale if >2h)
+    # Check wallet cursors (stale if >2h) - use cursor-based rotation for fair processing
+    stale_wallets = []
     for cursor_key, cursor_ts in cursors.items():
         if cursor_key.startswith("wallet:") and cursor_ts is not None:
             wallet = cursor_key.split(":", 1)[1]
             if current_time - cursor_ts > CURSOR_STALE_WALLET:
-                execution_time = time.time() - start_time
-                formatter.log_node_progress(
-                    "Planner",
-                    f"Selected wallet_recon (cursor stale >2h for {wallet})",
-                    execution_time
-                )
-                return {
-                    **state,
-                    "cursors": cursors,
-                    "selected_action": "wallet_recon",
-                    "target_wallet": wallet,
-                    "status": "working"
-                }
+                stale_wallets.append((wallet, cursor_ts))
+    
+    if stale_wallets:
+        # Sort by cursor timestamp (oldest first) to ensure fair rotation
+        stale_wallets.sort(key=lambda x: x[1])
+        target_wallet = stale_wallets[0][0]  # Pick the wallet that's been stale the longest
+        
+        execution_time = time.time() - start_time
+        formatter.log_node_progress(
+            "Planner",
+            f"Selected wallet_recon (cursor stale >2h for {target_wallet})",
+            execution_time
+        )
+        return {
+            **state,
+            "cursors": cursors,
+            "selected_action": "wallet_recon",
+            "target_wallet": target_wallet,
+            "status": "working"
+        }
     
     # Check LP cursor (stale if >6h)
     lp_cursor = cursors.get("lp", 0)

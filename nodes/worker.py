@@ -3,7 +3,8 @@ Worker node that executes the selected action via tool calls.
 """
 
 import time
-from datetime import datetime
+from collections import Counter
+from datetime import datetime, timedelta
 from typing import Dict, Any
 
 from json_storage import get_cursor, set_cursor
@@ -11,6 +12,84 @@ from data_model import save_raw_response, NormalizedEvent
 from mock_tools import fetch_wallet_activity, fetch_lp_activity, web_metrics_lookup
 from real_apis.provider_router import get_wallet_provider
 from .rich_output import formatter
+
+
+def analyze_events_detailed(events, selected_action, target_wallet=None):
+    """
+    Analyze events and return detailed breakdown for logging.
+    
+    Args:
+        events: List of events to analyze
+        selected_action: The action being performed (wallet_recon, lp_recon, etc.)
+        target_wallet: The target wallet address (for wallet_recon)
+    
+    Returns:
+        str: Detailed breakdown string for logging
+    """
+    if not events:
+        return "No events retrieved"
+    
+    current_time = int(datetime.now().timestamp())
+    
+    # Event type breakdown
+    event_types = Counter()
+    wallet_counts = Counter()
+    timestamps = []
+    
+    for event in events:
+        # Event type (handle both 'type' and 'kind' fields)
+        event_type = event.get("type", event.get("kind", "unknown"))
+        event_types[event_type] += 1
+        
+        # Wallet breakdown (for wallet_recon) - collect all wallets, not just target
+        if selected_action == "wallet_recon":
+            wallet_addr = event.get("wallet", event.get("address", "unknown"))
+            if wallet_addr and wallet_addr != "unknown":
+                wallet_counts[wallet_addr] += 1
+        
+        # Timestamp analysis
+        timestamp = event.get("timestamp", current_time)
+        if isinstance(timestamp, (int, float)):
+            timestamps.append(timestamp)
+    
+    # Build detailed breakdown
+    breakdown_parts = []
+    
+    # Total count
+    breakdown_parts.append(f"Total: {len(events)} events")
+    
+    # Event types (top 5)
+    if event_types:
+        type_summary = ", ".join([f"{t}: {c}" for t, c in event_types.most_common(5)])
+        breakdown_parts.append(f"Types: {type_summary}")
+    
+    # Wallet breakdown (if applicable)
+    if wallet_counts and selected_action == "wallet_recon":
+        wallet_summary = ", ".join([f"{w[:8]}...: {c}" for w, c in wallet_counts.items()])
+        breakdown_parts.append(f"Wallets: {wallet_summary}")
+    
+    # Age analysis with better granularity for recent events
+    if timestamps:
+        oldest = min(timestamps)
+        newest = max(timestamps)
+        avg_age_seconds = current_time - (sum(timestamps) / len(timestamps))
+        oldest_age_seconds = current_time - oldest
+        newest_age_seconds = current_time - newest
+        
+        # Use appropriate units based on age
+        def format_age(seconds):
+            if seconds < 60:  # Less than 1 minute
+                return f"{seconds:.0f}s"
+            elif seconds < 3600:  # Less than 1 hour
+                return f"{seconds/60:.0f}m"
+            elif seconds < 86400:  # Less than 1 day
+                return f"{seconds/3600:.1f}h"
+            else:  # Days or more
+                return f"{seconds/86400:.1f}d"
+        
+        breakdown_parts.append(f"Age: {format_age(avg_age_seconds)} avg (oldest: {format_age(oldest_age_seconds)}, newest: {format_age(newest_age_seconds)})")
+    
+    return " | ".join(breakdown_parts)
 
 
 async def worker_node(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -155,9 +234,12 @@ async def worker_node(state: Dict[str, Any]) -> Dict[str, Any]:
             await set_cursor("explore_metrics", new_cursor, "Last metrics exploration")
         
         execution_time = time.time() - start_time
+        
+        # Detailed event analysis
+        event_breakdown = analyze_events_detailed(events, selected_action, state.get("target_wallet"))
         formatter.log_node_progress(
             "Worker",
-            f"Retrieved {len(events)} events",
+            f"Retrieved {len(events)} events ({event_breakdown})",
             execution_time
         )
         

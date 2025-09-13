@@ -38,13 +38,13 @@ MAX_DELAY = 60.0  # seconds max per run
 
 def _should_log_verbose() -> bool:
     """Check if verbose API logging is enabled."""
-    from nodes.config import should_log_verbose
+    from ..nodes.config import should_log_verbose
     return should_log_verbose()
 
 
 def _should_log_malformed() -> bool:
     """Check if malformed transaction logging is enabled."""
-    from nodes.config import should_log_malformed
+    from ..nodes.config import should_log_malformed
     return should_log_malformed()
 
 
@@ -196,23 +196,8 @@ async def fetch_wallet_activity_covalent(
             for tx in transactions:
                 try:
                     # Extract basic transaction info
-                    # Try multiple timestamp fields from Covalent API
-                    timestamp_raw = (tx.get("block_signed_at_unix") or 
-                                   tx.get("block_signed_at") or 
-                                   current_ts)  # Fallback to current time
-                    
-                    # Convert timestamp to Unix integer if it's a string
-                    if isinstance(timestamp_raw, str):
-                        try:
-                            # Parse ISO format timestamp
-                            dt = datetime.fromisoformat(timestamp_raw.replace('Z', '+00:00'))
-                            timestamp = int(dt.timestamp())
-                        except (ValueError, TypeError):
-                            timestamp = current_ts  # Fallback to current time
-                    else:
-                        timestamp = timestamp_raw
                     event = {
-                        "timestamp": timestamp,
+                        "ts": tx.get("block_signed_at_unix", 0),
                         "chain": "base",
                         "type": _classify_transaction(tx),
                         "wallet": address,

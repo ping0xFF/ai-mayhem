@@ -218,7 +218,7 @@ class RichOutputFormatter:
 
         # Analysis
         if self.execution_data['brief_text']:
-            console.print("[bold blue]ANALYSIS[/bold blue]")
+            console.print("[bold blue]ANALYSIS[/bold blue] [dim](LLM Brief Content)[/dim]")
             wrapped = textwrap.fill(
                 self.execution_data['brief_text'],
                 width=80,
