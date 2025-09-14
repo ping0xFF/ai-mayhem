@@ -14,6 +14,31 @@ from real_apis.provider_router import get_wallet_provider
 from .rich_output import formatter
 
 
+def calculate_hours_back_from_cursor(cursor_timestamp: int) -> int:
+    """
+    Calculate hours_back based on cursor staleness.
+    
+    Args:
+        cursor_timestamp: Last update timestamp from cursor (0 if no cursor)
+        
+    Returns:
+        int: Hours to look back (1-168 hours)
+    """
+    if cursor_timestamp == 0:
+        # First time - get 48 hours of data
+        return 48
+    
+    # Calculate hours since last update
+    current_time = datetime.now().timestamp()
+    hours_since_update = (current_time - cursor_timestamp) / 3600
+    
+    # Add 1 hour buffer to ensure we don't miss any data
+    hours_back = hours_since_update + 1
+    
+    # Bound between 1 hour and 1 week (168 hours)
+    return min(max(int(hours_back), 1), 168)
+
+
 def analyze_events_detailed(events, selected_action, target_wallet=None):
     """
     Analyze events and return detailed breakdown for logging.
@@ -119,6 +144,16 @@ async def worker_node(state: Dict[str, Any]) -> Dict[str, Any]:
             # Get cursor for this wallet
             cursor_key = f"wallet:{wallet}"
             since_ts = state.get("cursors", {}).get(cursor_key, 0)
+            
+            # Calculate dynamic hours_back based on cursor staleness
+            hours_back = calculate_hours_back_from_cursor(since_ts)
+            
+            # Log the calculated hours_back
+            if since_ts == 0:
+                formatter.log_node_progress("Worker", f"First run for {wallet}, fetching 48 hours")
+            else:
+                hours_since_update = (datetime.now().timestamp() - since_ts) / 3600
+                formatter.log_node_progress("Worker", f"Last update {hours_since_update:.1f}h ago, fetching {hours_back}h")
 
             # Get provider router and log selected provider
             router = get_wallet_provider()
@@ -131,7 +166,7 @@ async def worker_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 chain="base",
                 since_ts=since_ts,
                 max_transactions=1000,
-                hours_back=None
+                hours_back=hours_back  # Dynamic calculation
             )
 
             # Determine provider and create appropriate raw_id
